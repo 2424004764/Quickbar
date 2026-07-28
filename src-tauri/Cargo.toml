@@ -1,6 +1,6 @@
 [package]
 name = "quickbar"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local uTools-style launcher without login"
 authors = ["quickbar"]
 edition = "2021"
@@ -35,6 +35,8 @@ base64 = "0.22"
 windows-icons = "0.3"
 # 解析 .lnk 目标路径，图标取自目标 exe（去掉快捷方式箭头角标）
 lnk = "0.5"
+# 资源管理器复制文件为 CF_HDROP，需读 FileList
+clipboard-win = "5"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2.4.3"

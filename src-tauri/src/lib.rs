@@ -179,6 +179,7 @@ pub fn run() {
             commands::add_custom_app,
             commands::remove_custom_app,
             commands::list_custom_apps,
+            commands::read_clipboard_launchable_path,
             commands::list_plugins,
             commands::search,
             commands::open_path,

@@ -108,6 +108,37 @@ body {
   overflow: hidden;
 }
 
+/* 主界面层：保活隐藏，避免进市场卸载首页导致图标闪烁 */
+.qb-view {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.qb-view.is-active {
+  display: flex;
+  animation: qb-view-in 160ms ease-out;
+}
+
+@keyframes qb-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qb-view.is-active {
+    animation: none;
+  }
+}
+
 .search-input-wrap {
   display: flex;
   align-items: center;

@@ -18,6 +18,7 @@ import {
   hideMainWindow,
   installMarketItem,
   openPath,
+  readClipboardLaunchablePath,
   refreshAppIndex,
   runUserCommand,
 } from "./pluginApi/api";
@@ -28,11 +29,9 @@ import {
   suppressBlurHideFor,
 } from "./utils/windowDrag";
 import {
-  HOME_COMPACT_SIZE,
-  PANEL_SIZE,
-  SEARCH_SIZE,
+  animateMainWindowSize,
   applyMainWindowSize,
-  homeSizeForRecentExpand,
+  resolveMainWindowSize,
 } from "./utils/windowSize";
 import "./styles/global.css";
 
@@ -69,32 +68,57 @@ export default function App() {
   queryRef.current = query;
   const showHome = !query.trim();
 
-  // 按当前页收紧/放高主窗，避免首页默认大块留白
+  /** 市场/设置保活，避免卸载首页导致图标重载闪烁 */
+  const [keepMarket, setKeepMarket] = useState(false);
+  const [keepSettings, setKeepSettings] = useState(false);
+
+  /**
+   * 切换主界面：内容立刻切换（淡入）+ 窗口高度缓动扩展/收缩
+   */
+  const goToView = useCallback(
+    (nextView) => {
+      if (nextView === "market") {
+        setKeepMarket(true);
+      }
+      if (nextView === "settings") {
+        setKeepSettings(true);
+      }
+      setView(nextView);
+      if (detached) {
+        return;
+      }
+      const size = resolveMainWindowSize(nextView, {
+        showHome: true,
+        homeRecentExpanded,
+        homeRecentExpandRows,
+      });
+      // 首页 ↔ 市场/设置：高度缓动；插件页仍瞬时落到目标，避免拖长
+      if (
+        nextView === "market"
+        || nextView === "settings"
+        || nextView === "search"
+      ) {
+        void animateMainWindowSize(size, { durationMs: 200 });
+        return;
+      }
+      void applyMainWindowSize(size);
+    },
+    [detached, homeRecentExpanded, homeRecentExpandRows],
+  );
+
+  // 仅在搜索页内：展开最近 / 有无查询 时调尺寸；跨页切换由 goToView 负责
   useEffect(() => {
-    if (detached) {
-      return;
-    }
-    if (view === "market") {
-      // 不改窗口高度：与首页同尺寸切换，列表在面板内滚动，避免拉高/压矮跳动
-      return;
-    }
-    if (view === "settings" || view === "plugin") {
-      void applyMainWindowSize(PANEL_SIZE);
-      return;
-    }
-    if (view !== "search") {
-      return;
-    }
-    if (!showHome) {
-      void applyMainWindowSize(SEARCH_SIZE);
+    if (detached || viewRef.current !== "search") {
       return;
     }
     void applyMainWindowSize(
-      homeRecentExpanded
-        ? homeSizeForRecentExpand(homeRecentExpandRows)
-        : HOME_COMPACT_SIZE,
+      resolveMainWindowSize("search", {
+        showHome,
+        homeRecentExpanded,
+        homeRecentExpandRows,
+      }),
     );
-  }, [view, showHome, homeRecentExpanded, homeRecentExpandRows, detached]);
+  }, [showHome, homeRecentExpanded, homeRecentExpandRows, detached]);
 
   const handleRecentExpandedChange = useCallback((expanded, meta) => {
     setHomeRecentExpanded(!!expanded);
@@ -141,11 +165,14 @@ export default function App() {
     setHomeKey((k) => k + 1);
   }, [refresh]);
 
-  const openPlugin = useCallback((id, title) => {
-    setPluginId(id);
-    setPluginTitle(title || id);
-    setView("plugin");
-  }, []);
+  const openPlugin = useCallback(
+    (id, title) => {
+      setPluginId(id);
+      setPluginTitle(title || id);
+      goToView("plugin");
+    },
+    [goToView],
+  );
 
   useEffect(() => {
     let unsubs = [];
@@ -172,11 +199,21 @@ export default function App() {
             } catch (err) {
               console.error("refresh app index failed", err);
             }
-            if (queryRef.current?.trim()) {
-              await refresh();
-            } else {
+            // 查询为空：尝试用剪贴板里的 exe/lnk 填入搜索（资源管理器 Ctrl+C）
+            if (!queryRef.current?.trim()) {
+              try {
+                const clipPath = await readClipboardLaunchablePath();
+                if (clipPath && !queryRef.current?.trim()) {
+                  setQuery(clipPath);
+                  return;
+                }
+              } catch (err) {
+                console.error("read clipboard launchable path failed", err);
+              }
               setHomeKey((k) => k + 1);
+              return;
             }
+            await refresh();
           })();
         }),
       );
@@ -190,12 +227,12 @@ export default function App() {
       );
       unsubs.push(
         await listen("quickbar://open-market", () => {
-          setView("market");
+          goToView("market");
         }),
       );
       unsubs.push(
         await listen("quickbar://open-settings", () => {
-          setView("settings");
+          goToView("settings");
         }),
       );
     })();
@@ -203,7 +240,7 @@ export default function App() {
       clearTimeout(focusTimer);
       unsubs.forEach((u) => u?.());
     };
-  }, [focusSearch, refresh]);
+  }, [focusSearch, refresh, goToView]);
 
   // 独立插件窗：不因失焦隐藏；主启动器才失焦隐藏
   useEffect(() => {
@@ -310,7 +347,7 @@ export default function App() {
             action: "open_market",
             payload: "market",
           });
-          setView("market");
+          goToView("market");
           return;
         }
         if (item.action === "open_settings") {
@@ -322,7 +359,7 @@ export default function App() {
             action: "open_settings",
             payload: "settings",
           });
-          setView("settings");
+          goToView("settings");
           return;
         }
         if (item.action === "open_plugin") {
@@ -381,7 +418,7 @@ export default function App() {
         console.error("activate failed", err);
       }
     },
-    [remember, openPlugin],
+    [remember, openPlugin, goToView],
   );
 
   function handleKeyNav(e) {
@@ -425,10 +462,10 @@ export default function App() {
   }
 
   function backToSearch() {
-    setView("search");
+    goToView("search");
     setQuery("");
     setPluginId("");
-    setHomeKey((k) => k + 1);
+    // 不 bump homeKey：首页保活，避免图标与列表整页重载闪一下
   }
 
   // 独立插件窗：只渲染插件页
@@ -448,6 +485,11 @@ export default function App() {
     );
   }
 
+  const searchActive = view === "search";
+  const marketActive = view === "market";
+  const settingsActive = view === "settings";
+  const pluginActive = view === "plugin";
+
   return (
     <div
       className="app-shell"
@@ -455,118 +497,140 @@ export default function App() {
     >
       <div className="panel">
         <WindowDragBar />
-        {view === "market" ? (
-          <MarketPanel onBack={backToSearch} />
-        ) : view === "settings" ? (
-          <SettingsPanel
-            theme={theme}
-            onThemeChange={setTheme}
-            onBack={backToSearch}
-          />
-        ) : view === "plugin" ? (
-          <PluginRunner
-            pluginId={pluginId}
-            title={pluginTitle}
-            onBack={backToSearch}
-            onDetached={backToSearch}
-          />
-        ) : (
-          <>
-            <SearchInput
-              inputRef={inputRef}
-              value={query}
-              onChange={setQuery}
-              placeholder="搜索应用、命令、插件…"
-              onSubmit={() => {
-                if (showHome) {
-                  const tile = homeNavRef.current?.getSelected?.();
-                  if (tile) {
-                    void activateItem(tile);
-                  }
-                  return;
+        <div
+          className={["qb-view", searchActive ? "is-active" : ""].join(" ")}
+          aria-hidden={!searchActive}
+          inert={!searchActive || undefined}
+        >
+          <SearchInput
+            inputRef={inputRef}
+            value={query}
+            onChange={setQuery}
+            placeholder="搜索应用、命令、插件…"
+            onSubmit={() => {
+              if (showHome) {
+                const tile = homeNavRef.current?.getSelected?.();
+                if (tile) {
+                  void activateItem(tile);
                 }
-                void activateItem(results[selectedIndex]);
-              }}
-              onEscape={() => {
-                if (String(queryRef.current || query).trim()) {
-                  clearSearchQuery();
-                  return;
-                }
-                void hideMainWindow();
-              }}
+                return;
+              }
+              void activateItem(results[selectedIndex]);
+            }}
+            onEscape={() => {
+              if (String(queryRef.current || query).trim()) {
+                clearSearchQuery();
+                return;
+              }
+              void hideMainWindow();
+            }}
+          />
+          {showHome ? (
+            <>
+              <LaunchHome
+                ref={homeNavRef}
+                refreshKey={homeKey}
+                onOpenMarket={() => goToView("market")}
+                onActivate={(tile) => void activateItem(tile)}
+                onRecentExpandedChange={handleRecentExpandedChange}
+              />
+              <footer className="footer-bar">
+                <span>←↑↓→ 选择 · Enter 打开 · Esc 清空/隐藏</span>
+                <span>
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => goToView("settings")}
+                  >
+                    设置
+                  </button>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => goToView("market")}
+                  >
+                    应用市场
+                  </button>
+                </span>
+              </footer>
+            </>
+          ) : (
+            <>
+              <ResultList
+                results={results}
+                selectedIndex={selectedIndex}
+                onSelect={setSelectedIndex}
+                onActivate={(item) => void activateItem(item)}
+                loading={loading}
+                query={query}
+              />
+              <footer className="footer-bar">
+                <span>↑↓ 选择 · Enter 打开 · Esc 清空/隐藏</span>
+                <span>
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => goToView("settings")}
+                  >
+                    设置
+                  </button>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => goToView("market")}
+                  >
+                    应用市场
+                  </button>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => void refreshAppsAndSearch()}
+                  >
+                    刷新
+                  </button>
+                </span>
+              </footer>
+            </>
+          )}
+        </div>
+
+        {keepMarket ? (
+          <div
+            className={["qb-view", marketActive ? "is-active" : ""].join(" ")}
+            aria-hidden={!marketActive}
+            inert={!marketActive || undefined}
+          >
+            <MarketPanel onBack={backToSearch} />
+          </div>
+        ) : null}
+
+        {keepSettings ? (
+          <div
+            className={["qb-view", settingsActive ? "is-active" : ""].join(" ")}
+            aria-hidden={!settingsActive}
+            inert={!settingsActive || undefined}
+          >
+            <SettingsPanel
+              theme={theme}
+              onThemeChange={setTheme}
+              onBack={backToSearch}
             />
-            {showHome ? (
-              <>
-                <LaunchHome
-                  ref={homeNavRef}
-                  refreshKey={homeKey}
-                  onOpenMarket={() => setView("market")}
-                  onActivate={(tile) => void activateItem(tile)}
-                  onRecentExpandedChange={handleRecentExpandedChange}
-                />
-                <footer className="footer-bar">
-                  <span>←↑↓→ 选择 · Enter 打开 · Esc 清空/隐藏</span>
-                  <span>
-                    <button
-                      type="button"
-                      className="linkish"
-                      onClick={() => setView("settings")}
-                    >
-                      设置
-                    </button>
-                    {" · "}
-                    <button
-                      type="button"
-                      className="linkish"
-                      onClick={() => setView("market")}
-                    >
-                      应用市场
-                    </button>
-                  </span>
-                </footer>
-              </>
-            ) : (
-              <>
-                <ResultList
-                  results={results}
-                  selectedIndex={selectedIndex}
-                  onSelect={setSelectedIndex}
-                  onActivate={(item) => void activateItem(item)}
-                  loading={loading}
-                  query={query}
-                />
-                <footer className="footer-bar">
-                  <span>↑↓ 选择 · Enter 打开 · Esc 清空/隐藏</span>
-                  <span>
-                    <button
-                      type="button"
-                      className="linkish"
-                      onClick={() => setView("settings")}
-                    >
-                      设置
-                    </button>
-                    {" · "}
-                    <button
-                      type="button"
-                      className="linkish"
-                      onClick={() => setView("market")}
-                    >
-                      应用市场
-                    </button>
-                    {" · "}
-                    <button
-                      type="button"
-                      className="linkish"
-                      onClick={() => void refreshAppsAndSearch()}
-                    >
-                      刷新
-                    </button>
-                  </span>
-                </footer>
-              </>
-            )}
-          </>
-        )}
+          </div>
+        ) : null}
+
+        {pluginActive ? (
+          <div className="qb-view is-active">
+            <PluginRunner
+              pluginId={pluginId}
+              title={pluginTitle}
+              onBack={backToSearch}
+              onDetached={backToSearch}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

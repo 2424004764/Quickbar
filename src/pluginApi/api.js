@@ -59,6 +59,14 @@ export function addCustomApp(path, name) {
   });
 }
 
+/**
+ * 读取剪贴板中的可启动路径（资源管理器文件列表或文本）
+ * @returns {Promise<string | null>}
+ */
+export function readClipboardLaunchablePath() {
+  return invoke("read_clipboard_launchable_path");
+}
+
 /** @returns {Promise<Array<{ id: string, name: string, path: string }>>} */
 export function listCustomApps() {
   return invoke("list_custom_apps");

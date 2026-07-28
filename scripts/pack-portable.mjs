@@ -110,8 +110,16 @@ function copyExe(src, dest) {
 const { cleaned } = prepareOutDir(outDir);
 copyExe(exePath, outExe);
 
-/** 内建插件 / 市场：优先打包产物 _up_，否则回退仓库目录 */
+/** 内建插件 / 市场：兼容 map 到 plugins/、旧版 _up_/、以及仓库目录 */
 const resourceCandidates = [
+  {
+    plugins: join(releaseDir, "plugins"),
+    market: join(releaseDir, "market"),
+  },
+  {
+    plugins: join(releaseDir, "resources", "plugins"),
+    market: join(releaseDir, "resources", "market"),
+  },
   {
     plugins: join(releaseDir, "_up_", "plugins"),
     market: join(releaseDir, "_up_", "market"),

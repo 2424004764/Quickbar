@@ -298,6 +298,44 @@ fn host_nav_items(query: &str) -> Vec<SearchItem> {
     items
 }
 
+/// 从候选路径中取第一个可启动项（.exe/.lnk 且文件存在）
+pub fn first_launchable_from_candidates<'a, I>(candidates: I) -> Option<String>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    for c in candidates {
+        if let Some(p) = normalize_launchable_path(c) {
+            return Some(p.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+/// 读取系统剪贴板中的可启动路径（优先资源管理器文件列表，其次文本）
+#[tauri::command]
+pub fn read_clipboard_launchable_path() -> Result<Option<String>, String> {
+    #[cfg(windows)]
+    {
+        use clipboard_win::{formats, get_clipboard};
+
+        if let Ok(files) = get_clipboard::<Vec<String>, _>(formats::FileList) {
+            if let Some(p) = first_launchable_from_candidates(files.iter().map(|s| s.as_str())) {
+                return Ok(Some(p));
+            }
+        }
+        if let Ok(text) = get_clipboard::<String, _>(formats::Unicode) {
+            if let Some(p) = first_launchable_from_candidates(std::iter::once(text.as_str())) {
+                return Ok(Some(p));
+            }
+        }
+        Ok(None)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(None)
+    }
+}
+
 /// 规范化剪贴板/搜索框中的可启动路径（.exe / .lnk）
 pub fn normalize_launchable_path(raw: &str) -> Option<PathBuf> {
     let mut s = raw.trim();
@@ -591,9 +629,11 @@ fn find_seed_market_catalog(state: &State<AppState>) -> Option<PathBuf> {
     }
 
     if let Some(res) = state.resource_dir.read().clone() {
+        // Tauri 2 对 resources 里的 `../xxx` 会落到 `$RESOURCE/_up_/xxx`
         for c in [
             res.join(&rel),
             res.join("market").join("catalog.json"),
+            res.join("_up_").join("market").join("catalog.json"),
             res.join("catalog.json"),
         ] {
             if c.exists() {
@@ -831,6 +871,7 @@ pub fn local_market_path_candidates(
     v.push(market_home.join(rel));
     if let Some(res) = resource_dir {
         v.push(res.join("market").join(rel));
+        v.push(res.join("_up_").join("market").join(rel));
         v.push(res.join(rel));
     }
     v.push(cwd.join("market").join(rel));
@@ -1007,8 +1048,34 @@ mod tests {
         let c = local_market_path_candidates("packages/hello", &market, Some(&res), &cwd);
         assert_eq!(c[0], market.join("packages/hello"));
         assert_eq!(c[1], res.join("market/packages/hello"));
-        assert_eq!(c[2], res.join("packages/hello"));
-        assert_eq!(c[3], cwd.join("market/packages/hello"));
+        assert_eq!(c[2], res.join("_up_/market/packages/hello"));
+        assert_eq!(c[3], res.join("packages/hello"));
+        assert_eq!(c[4], cwd.join("market/packages/hello"));
+    }
+
+    /// 目的：剪贴板多文件时优先取第一个可启动路径
+    #[test]
+    fn 候选路径取第一个可启动() {
+        let dir = std::env::temp_dir().join(format!(
+            "quickbar-clip-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let txt = dir.join("readme.txt");
+        let exe = dir.join("app.exe");
+        fs::write(&txt, b"x").unwrap();
+        fs::write(&exe, b"MZ").unwrap();
+
+        let txt_s = txt.to_string_lossy().to_string();
+        let exe_s = exe.to_string_lossy().to_string();
+        let picked = first_launchable_from_candidates([txt_s.as_str(), exe_s.as_str()]);
+        assert_eq!(picked.as_deref(), Some(exe_s.as_str()));
+
+        let none = first_launchable_from_candidates([txt_s.as_str()]);
+        assert!(none.is_none());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 

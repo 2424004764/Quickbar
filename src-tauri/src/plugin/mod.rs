@@ -55,6 +55,8 @@ pub fn resolve_resource_roots(resource_dir: Option<PathBuf>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(dir) = resource_dir {
         roots.push(dir.join("plugins"));
+        // Tauri 2：`../plugins` 资源会落在 `$RESOURCE/_up_/plugins`
+        roots.push(dir.join("_up_").join("plugins"));
         // bundle 可能把 resources 展平
         roots.push(dir.clone());
     }
