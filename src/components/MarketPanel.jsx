@@ -457,9 +457,14 @@ export function MarketPanel({ onBack }) {
       </main>
 
       <footer className="mk-foot">
-        {marketBaseUrl
-          ? `云端市场 · ${marketBaseUrl}`
-          : "本地市场 · 可在配置中设置 marketBaseUrl"}
+        <span className="mk-foot-advantage">
+          免费应用可添加，数量无限制
+        </span>
+        <span className="mk-foot-meta">
+          {marketBaseUrl
+            ? `云端 · ${marketBaseUrl}`
+            : "本地市场 · 可配置 marketBaseUrl"}
+        </span>
       </footer>
     </div>
   );

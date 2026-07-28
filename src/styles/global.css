@@ -623,10 +623,28 @@ body {
 
 .mk-foot {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 6px 14px 10px;
   font-size: 11px;
   color: var(--qb-muted);
   border-top: 1px solid var(--qb-border);
+}
+
+.mk-foot-advantage {
+  font-weight: 650;
+  color: var(--qb-accent);
+  flex-shrink: 0;
+}
+
+.mk-foot-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .btn {

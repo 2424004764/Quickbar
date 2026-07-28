@@ -431,7 +431,7 @@ function LaunchHomeInner(
           {
             id: "pin:market",
             title: "应用市场",
-            subtitle: "浏览并安装本地插件",
+            subtitle: "浏览并安装插件",
             kind: "plugin",
             action: "open_market",
             payload: "market",

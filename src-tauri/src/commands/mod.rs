@@ -250,7 +250,7 @@ fn host_nav_items(query: &str) -> Vec<SearchItem> {
             ]),
             "open_market",
             "market",
-            "浏览并安装插件",
+            "免费应用可添加，数量无限制",
             15,
         ),
         (

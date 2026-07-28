@@ -3,7 +3,7 @@
   "name": "应用市场",
   "version": "0.1.0",
   "author": "quickbar",
-  "description": "浏览并安装内部应用市场中的插件（无需登录）",
+  "description": "免费应用可添加，数量无限制；无需登录",
   "entrypoint": "index.js",
   "features": ["search", "action"],
   "commands": [{ "code": "market", "label": "市场" }],
