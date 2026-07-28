@@ -1,0 +1,11 @@
+{
+  "id": "text-diff",
+  "name": "文本对比",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "左右文本行级对比，支持忽略空白 / 大小写，并排或 Unified Diff",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "diff", "label": "文本对比" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

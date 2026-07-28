@@ -1,0 +1,11 @@
+{
+  "id": "url-codec",
+  "name": "URL 编解码",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "URL / URIComponent 编码与解码",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "url", "label": "URL 编解码" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

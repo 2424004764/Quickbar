@@ -1,0 +1,11 @@
+{
+  "id": "uuid-gen",
+  "name": "UUID / 短 ID",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "批量生成 UUID v4 或十六进制短 ID",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "uuid", "label": "UUID / 短 ID" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

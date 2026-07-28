@@ -1,0 +1,11 @@
+{
+  "id": "market",
+  "name": "应用市场",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "浏览并安装内部应用市场中的插件（无需登录）",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "market", "label": "市场" }],
+  "market": { "category": "system", "icon": "icon.png" }
+}

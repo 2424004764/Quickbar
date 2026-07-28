@@ -1,0 +1,11 @@
+{
+  "id": "timestamp",
+  "name": "时间戳转换",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "秒/毫秒时间戳与本地、UTC、ISO 日期互转",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "ts", "label": "时间戳转换" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

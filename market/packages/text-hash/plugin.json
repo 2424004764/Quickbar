@@ -1,0 +1,11 @@
+{
+  "id": "text-hash",
+  "name": "文本 Hash",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "本地计算 MD5 / SHA-1 / SHA-256 摘要",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "hash", "label": "文本 Hash" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

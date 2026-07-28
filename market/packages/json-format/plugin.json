@@ -1,0 +1,11 @@
+{
+  "id": "json-format",
+  "name": "JSON 编辑器",
+  "version": "0.2.0",
+  "author": "quickbar",
+  "description": "格式化 / 压缩 / 树形折叠 / this 表达式过滤",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "json", "label": "JSON 编辑器" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

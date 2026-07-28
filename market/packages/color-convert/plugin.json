@@ -1,0 +1,11 @@
+{
+  "id": "color-convert",
+  "name": "颜色转换",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "HEX / RGB / HSL 互转与色板预览",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "color", "label": "颜色转换" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

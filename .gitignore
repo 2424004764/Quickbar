@@ -1,0 +1,67 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+
+# Frontend build
+dist/
+dist-ssr/
+dist-portable/
+*.local
+
+# Env / secrets（本地配置与签名密钥切勿提交）
+.env
+.env.*
+!.env.example
+!.envexample.txt
+*.key
+*.key.pub
+*.pem
+*.p12
+*.pfx
+TAURI_SIGNING_PRIVATE_KEY*
+
+# 发版 / 安装包产物
+*.exe
+*.msi
+*.nsis.zip
+*.AppImage
+*.dmg
+*.deb
+*.rpm
+*.sig
+!src-tauri/icons/**
+
+# Rust / Tauri（根目录兜底；主规则见 src-tauri/.gitignore）
+src-tauri/target/
+src-tauri/gen/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 测试 / 覆盖率
+coverage/
+*.lcov
+
+# OS / 杂项
+*.tmp
+*.temp
+*.bak
+*.orig

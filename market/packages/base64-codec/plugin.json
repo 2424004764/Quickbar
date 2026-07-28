@@ -1,0 +1,11 @@
+{
+  "id": "base64-codec",
+  "name": "Base64 编解码",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "UTF-8 Base64 编码/解码，支持 URL-safe",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "b64", "label": "Base64 编解码" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

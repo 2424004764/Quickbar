@@ -1,0 +1,11 @@
+{
+  "id": "regex-lab",
+  "name": "正则测试",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "实时匹配、捕获组与替换预览",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "re", "label": "正则测试" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

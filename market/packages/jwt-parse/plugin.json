@@ -1,0 +1,11 @@
+{
+  "id": "jwt-parse",
+  "name": "JWT 解析",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "解码 JWT Header / Payload，查看过期时间（不验签）",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "jwt", "label": "JWT 解析" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}

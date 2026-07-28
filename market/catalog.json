@@ -1,0 +1,123 @@
+[
+  {
+    "id": "json-format",
+    "name": "JSON 编辑器",
+    "version": "0.2.0",
+    "author": "quickbar",
+    "description": "格式化 / 压缩 / 树形折叠 / this 表达式过滤",
+    "category": "dev",
+    "source": "local:packages/json-format",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "jwt-parse",
+    "name": "JWT 解析",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "解码 JWT Header / Payload，查看过期时间（不验签）",
+    "category": "dev",
+    "source": "local:packages/jwt-parse",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "text-diff",
+    "name": "文本对比",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "左右文本行级对比，支持忽略空白 / 大小写，并排或 Unified Diff",
+    "category": "dev",
+    "source": "local:packages/text-diff",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "timestamp",
+    "name": "时间戳转换",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "秒/毫秒时间戳与本地、UTC、ISO 日期互转",
+    "category": "dev",
+    "source": "local:packages/timestamp",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "password-gen",
+    "name": "随机密码",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "可配置长度与字符类型，本地生成随机密码（支持批量）",
+    "category": "dev",
+    "source": "local:packages/password-gen",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "base64-codec",
+    "name": "Base64 编解码",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "UTF-8 Base64 编码/解码，支持 URL-safe",
+    "category": "dev",
+    "source": "local:packages/base64-codec",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "url-codec",
+    "name": "URL 编解码",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "URL / URIComponent 编码与解码",
+    "category": "dev",
+    "source": "local:packages/url-codec",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "text-hash",
+    "name": "文本 Hash",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "本地计算 MD5 / SHA-1 / SHA-256 摘要",
+    "category": "dev",
+    "source": "local:packages/text-hash",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "uuid-gen",
+    "name": "UUID / 短 ID",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "批量生成 UUID v4 或十六进制短 ID",
+    "category": "dev",
+    "source": "local:packages/uuid-gen",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "regex-lab",
+    "name": "正则测试",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "实时匹配、捕获组与替换预览",
+    "category": "dev",
+    "source": "local:packages/regex-lab",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "color-convert",
+    "name": "颜色转换",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "HEX / RGB / HSL 互转与色板预览",
+    "category": "dev",
+    "source": "local:packages/color-convert",
+    "installed": false,
+    "installedVersion": null
+  }
+]

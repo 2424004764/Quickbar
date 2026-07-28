@@ -1,0 +1,11 @@
+{
+  "id": "password-gen",
+  "name": "随机密码",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "可配置长度与字符类型，本地生成随机密码（支持批量）",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [{ "code": "pwd", "label": "随机密码" }],
+  "market": { "category": "dev", "icon": "icon.png" }
+}
