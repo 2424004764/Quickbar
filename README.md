@@ -182,6 +182,8 @@ npm run tauri:dev
 
 ## 插件约定
 
+**自己新建一款应用（超详细步骤）**：[docs/create-plugin.md](docs/create-plugin.md)
+
 每个插件目录包含 `plugin.json`：
 
 ```json
@@ -292,7 +294,7 @@ npm run test:all
 quickbar/
 ├── src/                 # React UI（含 src/utils/*.test.js）
 ├── src-tauri/           # Rust 宿主（模块内 #[cfg(test)]）
-├── docs/                # 手工回归清单等
+├── docs/                # 新建插件指南、回归清单、截图等
 ├── plugins/             # 内建插件
 └── market/              # catalog + 可上架包
 ```
