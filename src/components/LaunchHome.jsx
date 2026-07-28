@@ -148,8 +148,8 @@ function seedHomeTiles(tiles) {
   });
 }
 
-/** 与 CSS `repeat(auto-fill, 72px)` + `column-gap: 2px` 对齐，估算一行可放几个 */
-const TILE_COL_STRIDE = 74;
+/** 磁贴最小占位（与均分列宽下限大致对齐），用于估算一行列数 */
+const TILE_COL_MIN = 64;
 
 /**
  * @param {number} width
@@ -159,7 +159,7 @@ function calcRecentCols(width) {
   if (!width || width < 1) {
     return 9;
   }
-  return Math.max(1, Math.floor((width + 2) / TILE_COL_STRIDE));
+  return Math.max(1, Math.floor(width / TILE_COL_MIN));
 }
 
 /**
@@ -185,14 +185,28 @@ function chunkByCols(items, cols) {
  *   onSelect: (tile: LaunchTile) => void,
  *   onActivate: (tile: LaunchTile) => void,
  *   onContextMenu?: (tile: LaunchTile, e: import("react").MouseEvent) => void,
+ *   cols?: number,
  * }} props
  */
-function TileGrid({ tiles, selectedKey, onSelect, onActivate, onContextMenu }) {
+function TileGrid({
+  tiles,
+  selectedKey,
+  onSelect,
+  onActivate,
+  onContextMenu,
+  cols = 9,
+}) {
   if (!tiles.length) {
     return <div className="lp-empty">暂无</div>;
   }
+  // 满行均分铺满宽度；不满行按个数密排，避免两三个图标被拉得很开
+  const fillRow = tiles.length >= cols;
+  const colCount = fillRow ? cols : Math.max(1, tiles.length);
   return (
-    <ul className="lp-grid">
+    <ul
+      className={["lp-grid", fillRow ? "is-fill" : "is-compact"].join(" ")}
+      style={{ "--lp-cols": String(colCount) }}
+    >
       {tiles.map((tile) => {
         const key = tileNavKey(tile);
         return (
@@ -662,6 +676,7 @@ function LaunchHomeInner(
         >
           <TileGrid
             tiles={recentTilesForGrid}
+            cols={recentCols}
             selectedKey={selectedKey}
             onSelect={(tile) => setSelectedKey(tileNavKey(tile))}
             onActivate={onActivate}
@@ -695,6 +710,7 @@ function LaunchHomeInner(
             ...tile,
             navKey: `pinned:${tile.id}`,
           }))}
+          cols={recentCols}
           selectedKey={selectedKey}
           onSelect={(tile) => setSelectedKey(tileNavKey(tile))}
           onActivate={onActivate}
@@ -719,6 +735,7 @@ function LaunchHomeInner(
             ...tile,
             navKey: `picks:${tile.id}`,
           }))}
+          cols={recentCols}
           selectedKey={selectedKey}
           onSelect={(tile) => setSelectedKey(tileNavKey(tile))}
           onActivate={onActivate}

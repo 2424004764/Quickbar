@@ -681,7 +681,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding: 4px 12px 2px;
+  padding: 4px 8px 2px;
   background: transparent;
 }
 
@@ -767,15 +767,26 @@ body {
   margin: 0;
   padding: 0;
   display: grid;
-  /* 固定列宽从左密排，避免 6 等分把图标拉得很开 */
-  grid-template-columns: repeat(auto-fill, 72px);
-  justify-content: start;
+  width: 100%;
+  grid-template-columns: repeat(var(--lp-cols, 9), minmax(0, 1fr));
   column-gap: 2px;
   row-gap: 2px;
 }
 
+/* 满行：均分铺满，消除左右空条 */
+.lp-grid.is-fill {
+  grid-template-columns: repeat(var(--lp-cols, 9), minmax(0, 1fr));
+}
+
+/* 不满行：固定列宽密排，避免少数图标被拉满整行 */
+.lp-grid.is-compact {
+  grid-template-columns: repeat(var(--lp-cols, 1), minmax(0, 72px));
+  justify-content: start;
+}
+
 .lp-tile {
-  width: 72px;
+  width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -898,12 +909,8 @@ body {
 }
 
 @media (max-width: 700px) {
-  .lp-grid {
-    grid-template-columns: repeat(auto-fill, 68px);
-  }
-
-  .lp-tile {
-    width: 68px;
+  .lp-grid.is-compact {
+    grid-template-columns: repeat(var(--lp-cols, 1), minmax(0, 68px));
   }
 }
 
