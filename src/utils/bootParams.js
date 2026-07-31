@@ -8,6 +8,8 @@
  *   view: string,
  *   pluginId: string,
  *   pluginTitle: string,
+ *   browserUrl: string,
+ *   browserTitle: string,
  *   detached: boolean,
  * }}
  */
@@ -25,6 +27,8 @@ export function readBootParams(search) {
     view: params.get("view") || "search",
     pluginId: params.get("id") || "",
     pluginTitle: decodeURIComponent(params.get("title") || ""),
+    browserUrl: params.get("url") || "",
+    browserTitle: decodeURIComponent(params.get("title") || ""),
     detached: params.get("detached") === "1",
   };
 }

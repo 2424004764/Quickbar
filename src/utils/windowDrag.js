@@ -20,10 +20,12 @@ const NO_DRAG_SELECTOR = [
 /** 拖动中 / 刚松手：前端失焦隐藏应跳过 */
 let blurSuppressed = false;
 let releaseTimer = 0;
+/** 用户手动钉住：一直不失焦隐藏，直到取消 */
+let pinned = false;
 
 /** @returns {boolean} */
 export function isWindowDragBlurSuppressed() {
-  return blurSuppressed;
+  return pinned || blurSuppressed;
 }
 
 function beginBlurSuppress() {
@@ -43,8 +45,33 @@ function endBlurSuppressSoon(ms = 250) {
   releaseTimer = window.setTimeout(() => {
     releaseTimer = 0;
     blurSuppressed = false;
+    if (pinned) {
+      return;
+    }
     void setBlurHideEnabled(true);
   }, ms);
+}
+
+/**
+ * 钉住窗口：期间任何失焦都不隐藏（迁移执行、对照其他窗口操作时用）
+ * @param {boolean} next
+ */
+export async function setBlurHidePinned(next) {
+  pinned = Boolean(next);
+  if (pinned && releaseTimer) {
+    window.clearTimeout(releaseTimer);
+    releaseTimer = 0;
+  }
+  try {
+    await setBlurHideEnabled(!pinned);
+  } catch (err) {
+    console.warn("setBlurHideEnabled failed", err);
+  }
+}
+
+/** @returns {boolean} */
+export function isBlurHidePinned() {
+  return pinned;
 }
 
 /**
@@ -54,6 +81,53 @@ function endBlurSuppressSoon(ms = 250) {
 export function suppressBlurHideFor(ms = 400) {
   beginBlurSuppress();
   endBlurSuppressSoon(ms);
+}
+
+/** 允许嵌套调用（同时开多个对话框时不提前解除压制） */
+let suspendDepth = 0;
+
+/** 对话框抢焦点若已把窗口藏掉，关闭后要自己找回来 */
+async function restoreMainWindow() {
+  try {
+    const win = getCurrentWindow();
+    if (!(await win.isVisible())) {
+      await win.show();
+    }
+    await win.setFocus();
+  } catch (err) {
+    console.warn("restore window failed", err);
+  }
+}
+
+/**
+ * 执行期间压制失焦隐藏：打开系统文件对话框时主窗会失焦，不能被隐藏
+ * @template T
+ * @param {() => Promise<T>} run
+ * @returns {Promise<T>}
+ */
+export async function runWithBlurHideSuspended(run) {
+  suspendDepth += 1;
+  blurSuppressed = true;
+  if (releaseTimer) {
+    window.clearTimeout(releaseTimer);
+    releaseTimer = 0;
+  }
+  // 必须等后端确认再开对话框：Rust 侧失焦回调只延迟 120ms 就读开关，来不及就会隐藏
+  try {
+    await setBlurHideEnabled(false);
+  } catch (err) {
+    console.warn("setBlurHideEnabled failed", err);
+  }
+  try {
+    return await run();
+  } finally {
+    suspendDepth -= 1;
+    if (suspendDepth <= 0) {
+      suspendDepth = 0;
+      await restoreMainWindow();
+      endBlurSuppressSoon(600);
+    }
+  }
 }
 
 /**

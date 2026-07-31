@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  HOST_LINUX_DO_ICON_DATA_URL,
   HOST_SETTINGS_ICON_DATA_URL,
+  HOST_V2EX_ICON_DATA_URL,
   resolveBuiltinTileIcon,
   withBuiltinIcons,
 } from "./hostIcons";
@@ -14,6 +16,23 @@ describe("hostIcons", () => {
     });
     expect(icon).toBe(HOST_SETTINGS_ICON_DATA_URL);
     expect(icon.startsWith("data:image/svg+xml")).toBe(true);
+  });
+
+  it("内置网页入口有固定图标", () => {
+    expect(
+      resolveBuiltinTileIcon({
+        id: "pin:linux-do",
+        action: "open_path",
+        payload: "https://linux.do/",
+      }),
+    ).toBe(HOST_LINUX_DO_ICON_DATA_URL);
+    expect(
+      resolveBuiltinTileIcon({
+        id: "pin:v2ex",
+        action: "open_path",
+        payload: "https://www.v2ex.com/",
+      }),
+    ).toBe(HOST_V2EX_ICON_DATA_URL);
   });
 
   it("withBuiltinIcons 补齐缺失图标且不覆盖已有", () => {

@@ -4,8 +4,8 @@
 mod icon;
 
 pub use icon::{
-    ensure_icon_data_url, host_market_icon_data_url, host_settings_icon_data_url,
-    windows_settings_icon_data_url,
+    ensure_icon_data_url, host_linux_do_icon_data_url, host_market_icon_data_url,
+    host_settings_icon_data_url, host_v2ex_icon_data_url, windows_settings_icon_data_url,
 };
 
 use once_cell::sync::Lazy;

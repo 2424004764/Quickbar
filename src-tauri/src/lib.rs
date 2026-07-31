@@ -1,7 +1,10 @@
 mod apps;
 mod commands;
 mod config;
+mod disk_usage;
 mod hotkey;
+mod in_app_browser;
+mod pg_migrate;
 mod plugin;
 
 use commands::AppState;
@@ -18,8 +21,16 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 /// 防止热键/托盘事件在主线程重入导致栈溢出
 static TOGGLE_GUARD: AtomicBool = AtomicBool::new(false);
 
+/// 取主窗
+///
+/// 不能用 `get_webview_window`：一旦窗口里挂了子 WebView（内嵌网页），
+/// 它会因为 `is_webview_window()` 为假而返回 None，窗口的显示/隐藏就全哑了。
+fn main_window(app: &AppHandle) -> Option<tauri::Window> {
+    app.get_webview("main").map(|wv| wv.window())
+}
+
 /// 鼠标所在显示器（找不到则回退当前/主屏）
-fn monitor_under_cursor(win: &tauri::WebviewWindow) -> Option<tauri::Monitor> {
+fn monitor_under_cursor(win: &tauri::Window) -> Option<tauri::Monitor> {
     let cursor = win.cursor_position().ok()?;
     win.monitor_from_point(cursor.x, cursor.y)
         .ok()
@@ -29,7 +40,7 @@ fn monitor_under_cursor(win: &tauri::WebviewWindow) -> Option<tauri::Monitor> {
 }
 
 /// 将窗口居中到「鼠标所在显示器」（多屏时跟鼠标所在屏）
-fn place_on_cursor_monitor(win: &tauri::WebviewWindow) {
+fn place_on_cursor_monitor(win: &tauri::Window) {
     let Some(monitor) = monitor_under_cursor(win) else {
         let _ = win.center();
         return;
@@ -54,7 +65,7 @@ fn place_on_cursor_monitor(win: &tauri::WebviewWindow) {
 }
 
 /// 鼠标是否已在另一块显示器上（窗口已显示时用于“跟屏移动”）
-fn cursor_on_other_monitor(win: &tauri::WebviewWindow) -> bool {
+fn cursor_on_other_monitor(win: &tauri::Window) -> bool {
     let Some(cursor_mon) = monitor_under_cursor(win) else {
         return false;
     };
@@ -66,7 +77,7 @@ fn cursor_on_other_monitor(win: &tauri::WebviewWindow) -> bool {
 
 /// 显示并聚焦启动器窗口
 pub fn show_launcher(app: &AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window("main") {
+    if let Some(win) = main_window(app) {
         let _ = win.unminimize();
         // 先按鼠标所在屏定位，再显示，避免闪到主屏
         place_on_cursor_monitor(&win);
@@ -85,7 +96,7 @@ pub fn show_launcher(app: &AppHandle) -> Result<(), String> {
 }
 
 /// 尽量把窗口拉到前台（Windows 会限制跨进程抢焦点，需额外处理）
-fn force_window_foreground(win: &tauri::WebviewWindow) {
+fn force_window_foreground(win: &tauri::Window) {
     let _ = win.unminimize();
     let _ = win.show();
     let _ = win.set_focus();
@@ -109,7 +120,7 @@ fn focus_existing_launcher(app: &AppHandle) {
 }
 
 fn hide_launcher(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
+    if let Some(win) = main_window(app) {
         let _ = win.hide();
     }
 }
@@ -119,7 +130,7 @@ fn toggle_launcher(app: &AppHandle) {
         return;
     }
     let result = (|| {
-        if let Some(win) = app.get_webview_window("main") {
+        if let Some(win) = main_window(app) {
             if win.is_visible().unwrap_or(false) {
                 // 已打开但鼠标在另一块屏：跟屏移动，而不是关闭
                 if cursor_on_other_monitor(&win) {
@@ -179,7 +190,28 @@ pub fn run() {
             commands::add_custom_app,
             commands::remove_custom_app,
             commands::list_custom_apps,
+            commands::upsert_web_app,
+            commands::sync_custom_app_to_market,
+            commands::set_market_base_url,
             commands::read_clipboard_launchable_path,
+            in_app_browser::browser_open,
+            in_app_browser::browser_set_bounds,
+            in_app_browser::browser_set_visible,
+            in_app_browser::browser_close,
+            in_app_browser::browser_is_open,
+            in_app_browser::browser_nav,
+            in_app_browser::browser_log,
+            pg_migrate::pg_list_connections,
+            pg_migrate::pg_save_connections,
+            pg_migrate::pg_detect_tools,
+            pg_migrate::pg_test_connection,
+            pg_migrate::pg_list_schemas,
+            pg_migrate::pg_migrate,
+            pg_migrate::pg_migrate_review_reply,
+            disk_usage::disk_list_drives,
+            disk_usage::disk_analyze,
+            disk_usage::disk_cancel_analyze,
+            disk_usage::disk_scan_state,
             commands::list_plugins,
             commands::search,
             commands::open_path,
@@ -276,7 +308,7 @@ pub fn run() {
             });
 
             // 失焦隐藏：短延迟后关闭，避免点击结果项时被抢焦点立刻关掉
-            if let Some(win) = app.get_webview_window("main") {
+            if let Some(win) = main_window(app.handle()) {
                 let app_handle = app.handle().clone();
                 win.on_window_event(move |event| {
                     if let WindowEvent::Focused(false) = event {
@@ -287,7 +319,7 @@ pub fn run() {
                             if !allow {
                                 return;
                             }
-                            if let Some(w) = app_handle.get_webview_window("main") {
+                            if let Some(w) = main_window(&app_handle) {
                                 if w.is_visible().unwrap_or(false)
                                     && !w.is_focused().unwrap_or(false)
                                 {

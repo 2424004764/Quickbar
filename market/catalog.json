@@ -119,5 +119,27 @@
     "source": "local:packages/color-convert",
     "installed": false,
     "installedVersion": null
+  },
+  {
+    "id": "pg-migrate",
+    "name": "PG 迁移",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "用 pg_dump/psql 迁移 schema 或数据；可保存连接并自动拉取 schema",
+    "category": "dev",
+    "source": "local:packages/pg-migrate",
+    "installed": false,
+    "installedVersion": null
+  },
+  {
+    "id": "disk-usage",
+    "name": "磁盘占用分析",
+    "version": "0.1.0",
+    "author": "quickbar",
+    "description": "分析某个盘或文件夹的磁盘占用，按子项大小排序并可逐级下钻",
+    "category": "system",
+    "source": "local:packages/disk-usage",
+    "installed": false,
+    "installedVersion": null
   }
 ]

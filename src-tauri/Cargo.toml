@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-shell = "2"
@@ -30,6 +30,7 @@ pinyin = "0.10"
 open = "5"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 base64 = "0.22"
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-icons = "0.3"
@@ -37,6 +38,17 @@ windows-icons = "0.3"
 lnk = "0.5"
 # 资源管理器复制文件为 CF_HDROP，需读 FileList
 clipboard-win = "5"
+# DPAPI（与现有依赖树兼容，避免再拉一份 windows crate）
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security_Cryptography",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Memory",
+] }
+
+[target.'cfg(not(windows))'.dependencies]
+aes-gcm = "0.10"
+rand = "0.8"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2.4.3"

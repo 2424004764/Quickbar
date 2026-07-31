@@ -22,4 +22,14 @@ describe("独立插件窗 · 启动参数解析", () => {
     expect(p.pluginId).toBe("");
     expect(p.detached).toBe(false);
   });
+
+  it("能解析分离网页窗参数", () => {
+    const p = readBootParams(
+      "?view=browser&url=https%3A%2F%2Fwww.v2ex.com%2F&title=V2EX&detached=1",
+    );
+    expect(p.view).toBe("browser");
+    expect(p.browserUrl).toBe("https://www.v2ex.com/");
+    expect(p.browserTitle).toBe("V2EX");
+    expect(p.detached).toBe(true);
+  });
 });

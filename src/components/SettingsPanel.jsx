@@ -7,6 +7,7 @@ import {
   resumeGlobalHotkey,
   setBlurHideEnabled,
   setHotkey,
+  setMarketBaseUrl,
   suspendGlobalHotkey,
 } from "../pluginApi/api";
 import { hotkeyFromEvent, isBlockedHotkey } from "../utils/hotkeyFromEvent";
@@ -32,6 +33,9 @@ const PRESETS = [
 export function SettingsPanel({ onBack, theme = "system", onThemeChange }) {
   const [currentHotkey, setCurrentHotkey] = useState("Ctrl+Space");
   const [draftHotkey, setDraftHotkey] = useState("Ctrl+Space");
+  const [marketBaseUrl, setMarketBaseUrlState] = useState("");
+  const [draftMarketUrl, setDraftMarketUrl] = useState("");
+  const [marketSaving, setMarketSaving] = useState(false);
   const [recording, setRecording] = useState(false);
   const [saving, setSaving] = useState(false);
   const [themeSaving, setThemeSaving] = useState(false);
@@ -47,10 +51,34 @@ export function SettingsPanel({ onBack, theme = "system", onThemeChange }) {
       const hk = String(config?.hotkey || "Ctrl+Space").trim() || "Ctrl+Space";
       setCurrentHotkey(hk);
       setDraftHotkey(hk);
+      const base = String(config?.marketBaseUrl || "").trim();
+      setMarketBaseUrlState(base);
+      setDraftMarketUrl(base);
     } catch (err) {
       setError(String(err?.message || err));
     }
   }, []);
+
+  async function applyMarketBaseUrl() {
+    setMarketSaving(true);
+    setError("");
+    setOkMsg("");
+    try {
+      const config = await setMarketBaseUrl(draftMarketUrl.trim());
+      const next = String(config?.marketBaseUrl || "").trim();
+      setMarketBaseUrlState(next);
+      setDraftMarketUrl(next);
+      setOkMsg(
+        next
+          ? `云端市场已设为：${next}`
+          : "已清空云端市场地址，仅使用本地市场",
+      );
+    } catch (err) {
+      setError(String(err?.message || err));
+    } finally {
+      setMarketSaving(false);
+    }
+  }
 
   const applyHotkey = useCallback(async (hotkey) => {
     const value = String(hotkey || "").trim();
@@ -211,6 +239,42 @@ export function SettingsPanel({ onBack, theme = "system", onThemeChange }) {
                 {item.label}
               </button>
             ))}
+          </div>
+        </section>
+
+        <section className="st-card">
+          <h3 className="st-card-title">云端应用市场</h3>
+          <p className="st-hint">
+            基址为空时只用本机市场。配置后可投稿插件、同步自建网页/本地应用（协议：
+            <code>POST /market/submit</code>、<code>POST /market/submit-app</code>）。
+          </p>
+          <label className="st-label" htmlFor="st-market-url">
+            市场基址
+          </label>
+          <input
+            id="st-market-url"
+            className="st-input"
+            value={draftMarketUrl}
+            onChange={(e) => {
+              setDraftMarketUrl(e.target.value);
+              setError("");
+              setOkMsg("");
+            }}
+            placeholder="https://market.example.com 或留空"
+            spellCheck={false}
+          />
+          <div className="st-actions">
+            <button
+              type="button"
+              className="st-btn is-primary"
+              disabled={
+                marketSaving
+                || draftMarketUrl.trim() === marketBaseUrl
+              }
+              onClick={() => void applyMarketBaseUrl()}
+            >
+              {marketSaving ? "保存中…" : "保存市场地址"}
+            </button>
           </div>
         </section>
 

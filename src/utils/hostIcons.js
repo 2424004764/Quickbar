@@ -24,11 +24,31 @@ const MARKET_SVG = [
   "</svg>",
 ].join("");
 
+const LINUX_DO_SVG = [
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">',
+  '<rect width="48" height="48" rx="12" fill="#FF6A00"/>',
+  '<text x="24" y="30" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="700" fill="#fff">LDO</text>',
+  "</svg>",
+].join("");
+
+const V2EX_SVG = [
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">',
+  '<rect width="48" height="48" rx="12" fill="#1A1A1A"/>',
+  '<text x="24" y="30" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="700" fill="#fff">V2</text>',
+  "</svg>",
+].join("");
+
 /** Windows / Quickbar 设置：蓝底齿轮 */
 export const HOST_SETTINGS_ICON_DATA_URL = svgDataUrl(SETTINGS_SVG);
 
 /** 应用市场：紫底商店 */
 export const HOST_MARKET_ICON_DATA_URL = svgDataUrl(MARKET_SVG);
+
+/** LINUX DO */
+export const HOST_LINUX_DO_ICON_DATA_URL = svgDataUrl(LINUX_DO_SVG);
+
+/** V2EX */
+export const HOST_V2EX_ICON_DATA_URL = svgDataUrl(V2EX_SVG);
 
 /**
  * 已知宿主项的同步图标；无则 null
@@ -56,6 +76,20 @@ export function resolveBuiltinTileIcon(tile) {
   // 系统设置 URI：直接用齿轮，避免等 getAppIcon 时先闪「W」
   if (payload.startsWith("ms-settings:")) {
     return HOST_SETTINGS_ICON_DATA_URL;
+  }
+  if (
+    payload === "https://linux.do/"
+    || payload === "https://linux.do"
+    || id === "pin:linux-do"
+  ) {
+    return HOST_LINUX_DO_ICON_DATA_URL;
+  }
+  if (
+    payload === "https://www.v2ex.com/"
+    || payload === "https://www.v2ex.com"
+    || id === "pin:v2ex"
+  ) {
+    return HOST_V2EX_ICON_DATA_URL;
   }
   return null;
 }

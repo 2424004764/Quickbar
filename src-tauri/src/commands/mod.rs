@@ -1,8 +1,9 @@
 //! 前端可调用的 Tauri commands
 
 use crate::apps::{
-    cached_apps, ensure_icon_data_url, host_market_icon_data_url, host_settings_icon_data_url,
-    refresh_apps, refresh_apps_if_stale, score_app_query, windows_settings_icon_data_url, AppEntry,
+    cached_apps, ensure_icon_data_url, host_linux_do_icon_data_url, host_market_icon_data_url,
+    host_settings_icon_data_url, host_v2ex_icon_data_url, refresh_apps, refresh_apps_if_stale,
+    score_app_query, windows_settings_icon_data_url, AppEntry,
 };
 use std::time::Duration;
 use crate::config::{
@@ -220,7 +221,7 @@ pub fn search(query: String, state: State<AppState>) -> Vec<SearchItem> {
     items
 }
 
-/// Quickbar 内置导航（设置、市场）及 Windows 系统设置
+/// Quickbar 内置导航（设置、市场、网页入口）及 Windows 系统设置
 fn host_nav_items(query: &str) -> Vec<SearchItem> {
     let q = query.trim();
     if q.is_empty() {
@@ -254,6 +255,29 @@ fn host_nav_items(query: &str) -> Vec<SearchItem> {
             15,
         ),
         (
+            AppEntry::new("LINUX DO", "host:linux-do").with_aliases([
+                "linux.do",
+                "linuxdo",
+                "linux do",
+                "LDO",
+            ]),
+            "open_path",
+            "https://linux.do/",
+            "打开 LINUX DO 社区",
+            12,
+        ),
+        (
+            AppEntry::new("V2EX", "host:v2ex").with_aliases([
+                "v2ex.com",
+                "v2",
+                "酷客",
+            ]),
+            "open_path",
+            "https://www.v2ex.com/",
+            "打开 V2EX",
+            12,
+        ),
+        (
             AppEntry::new("Windows 设置", "ms-settings:").with_aliases([
                 "系统设置",
                 "控制面板",
@@ -269,14 +293,18 @@ fn host_nav_items(query: &str) -> Vec<SearchItem> {
     let win_settings_icon = windows_settings_icon_data_url();
     let qb_settings_icon = Some(host_settings_icon_data_url());
     let market_icon = Some(host_market_icon_data_url());
+    let linux_do_icon = Some(host_linux_do_icon_data_url());
+    let v2ex_icon = Some(host_v2ex_icon_data_url());
 
     let mut items = Vec::new();
     for (app, action, payload, subtitle, bonus) in catalog {
         if let Some(s) = score_app_query(&app, q) {
-            let icon_data_url = match action {
-                "open_settings" => qb_settings_icon.clone(),
-                "open_market" => market_icon.clone(),
-                "open_path" if payload.starts_with("ms-settings:") => win_settings_icon.clone(),
+            let icon_data_url = match (action, payload) {
+                ("open_settings", _) => qb_settings_icon.clone(),
+                ("open_market", _) => market_icon.clone(),
+                ("open_path", p) if p.starts_with("ms-settings:") => win_settings_icon.clone(),
+                ("open_path", "https://linux.do/") => linux_do_icon.clone(),
+                ("open_path", "https://www.v2ex.com/") => v2ex_icon.clone(),
                 _ => None,
             };
             items.push(SearchItem {
@@ -383,8 +411,14 @@ fn custom_apps_as_entries(config: &AppConfig) -> Vec<AppEntry> {
         .custom_apps
         .iter()
         .map(|c| {
+            let mut aliases = c.aliases.clone();
+            if c.resolved_kind() == "web" {
+                aliases.push(c.path.clone());
+                aliases.push("网页".into());
+                aliases.push("web".into());
+            }
             AppEntry::new(c.name.clone(), c.path.clone())
-                .with_aliases(c.aliases.clone())
+                .with_aliases(aliases)
                 .with_id(format!("local:{}", c.id))
         })
         .collect()
@@ -421,6 +455,12 @@ pub fn add_custom_app(path: String, name: Option<String>) -> Result<CustomApp, S
         name: display_name,
         path: path_str,
         aliases: vec![],
+        kind: "native".into(),
+        description: String::new(),
+        share_to_market: false,
+        market_status: "local".into(),
+        market_remote_id: String::new(),
+        market_message: String::new(),
     };
     config.custom_apps.push(app.clone());
     save_config(&config)?;
@@ -443,6 +483,269 @@ pub fn remove_custom_app(id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn list_custom_apps() -> Vec<CustomApp> {
     load_config().custom_apps
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertWebAppRequest {
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// true = 尝试同步到云端市场；false = 仅本机自用
+    #[serde(default)]
+    pub share_to_market: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertWebAppResult {
+    pub app: CustomApp,
+    /// 给人看的同步结果说明
+    pub sync_message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncCustomAppResult {
+    pub app: CustomApp,
+    pub synced: bool,
+    pub message: String,
+}
+
+/// 创建 / 更新网页应用；可选同步到云端市场（未配置基址则本地留 pending）
+#[tauri::command]
+pub fn upsert_web_app(req: UpsertWebAppRequest) -> Result<UpsertWebAppResult, String> {
+    let _ = ensure_data_dirs();
+    let name = req.name.trim().to_string();
+    if name.is_empty() {
+        return Err("请填写应用名称".into());
+    }
+    let url = normalize_web_url(&req.url)?;
+    let description = req.description.trim().to_string();
+    let aliases: Vec<String> = req
+        .aliases
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut config = load_config();
+    let id = if !req.id.trim().is_empty() {
+        req.id.trim().to_string()
+    } else {
+        custom_app_id(&url)
+    };
+
+    let existing_idx = config.custom_apps.iter().position(|a| a.id == id);
+    let mut app = if let Some(i) = existing_idx {
+        config.custom_apps[i].clone()
+    } else if let Some(dup) = config
+        .custom_apps
+        .iter()
+        .find(|a| a.resolved_kind() == "web" && paths_equal(&a.path, &url))
+    {
+        dup.clone()
+    } else {
+        CustomApp {
+            id: id.clone(),
+            name: name.clone(),
+            path: url.clone(),
+            aliases: aliases.clone(),
+            kind: "web".into(),
+            description: description.clone(),
+            share_to_market: req.share_to_market,
+            market_status: "local".into(),
+            market_remote_id: String::new(),
+            market_message: String::new(),
+        }
+    };
+
+    app.name = name;
+    app.path = url;
+    app.kind = "web".into();
+    app.description = description;
+    app.aliases = aliases;
+    app.share_to_market = req.share_to_market;
+
+    let sync_message = if req.share_to_market {
+        match try_sync_custom_app_to_market(&mut app) {
+            Ok(msg) => msg,
+            Err(e) => {
+                app.market_status = "error".into();
+                app.market_message = e.clone();
+                format!("已保存到本机，同步失败：{e}")
+            }
+        }
+    } else {
+        app.market_status = "local".into();
+        app.market_remote_id.clear();
+        app.market_message = "仅本机自用".into();
+        "已保存为仅本机自用".into()
+    };
+
+    if let Some(i) = config.custom_apps.iter().position(|a| a.id == app.id) {
+        config.custom_apps[i] = app.clone();
+    } else {
+        config.custom_apps.push(app.clone());
+    }
+    save_config(&config)?;
+    Ok(UpsertWebAppResult { app, sync_message })
+}
+
+/// 把本机自定义应用（网页 / 原生）同步到云端市场（预留口子）
+#[tauri::command]
+pub fn sync_custom_app_to_market(id: String) -> Result<SyncCustomAppResult, String> {
+    let _ = ensure_data_dirs();
+    let mut config = load_config();
+    let idx = config
+        .custom_apps
+        .iter()
+        .position(|a| a.id == id)
+        .ok_or_else(|| format!("本地应用不存在: {id}"))?;
+    let mut app = config.custom_apps[idx].clone();
+    app.share_to_market = true;
+    let message = match try_sync_custom_app_to_market(&mut app) {
+        Ok(msg) => {
+            let synced = app.market_status == "queued" || app.market_status == "published";
+            config.custom_apps[idx] = app.clone();
+            save_config(&config)?;
+            return Ok(SyncCustomAppResult {
+                app,
+                synced,
+                message: msg,
+            });
+        }
+        Err(e) => {
+            app.market_status = if load_config().market_base_url.trim().is_empty() {
+                "pending".into()
+            } else {
+                "error".into()
+            };
+            app.market_message = e.clone();
+            config.custom_apps[idx] = app.clone();
+            save_config(&config)?;
+            e
+        }
+    };
+    Ok(SyncCustomAppResult {
+        synced: false,
+        app: config.custom_apps[idx].clone(),
+        message,
+    })
+}
+
+/// 设置云端市场基址（空 = 仅用本地市场）
+#[tauri::command]
+pub fn set_market_base_url(url: String) -> Result<AppConfig, String> {
+    let mut config = load_config();
+    config.market_base_url = url.trim().trim_end_matches('/').to_string();
+    save_config(&config)?;
+    Ok(config)
+}
+
+fn normalize_web_url(raw: &str) -> Result<String, String> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return Err("请填写网页地址".into());
+    }
+    let url = if s.starts_with("http://") || s.starts_with("https://") {
+        s.to_string()
+    } else {
+        format!("https://{s}")
+    };
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url.as_str());
+    if rest.is_empty() || !rest.contains('.') && !rest.starts_with("localhost") {
+        return Err("网页地址看起来无效，请包含域名（如 example.com）".into());
+    }
+    Ok(url)
+}
+
+/// 向云端投稿自定义应用。协议：POST {base}/market/submit-app
+/// 无基址时标记 pending，不报错（方便以后开通市场）。
+fn try_sync_custom_app_to_market(app: &mut CustomApp) -> Result<String, String> {
+    let config = load_config();
+    let base = config.market_base_url.trim();
+    if base.is_empty() {
+        app.market_status = "pending".into();
+        app.market_message =
+            "已标记待同步：尚未配置 marketBaseUrl，开通云端市场后可一键推送".into();
+        return Ok(app.market_message.clone());
+    }
+
+    let kind = app.resolved_kind().to_string();
+    let body = serde_json::json!({
+        "kind": kind,
+        "id": app.id,
+        "name": app.name,
+        "url": if kind == "web" { app.path.clone() } else { String::new() },
+        "path": if kind == "native" { app.path.clone() } else { String::new() },
+        "description": app.description,
+        "aliases": app.aliases,
+        "version": "0.1.0",
+        "category": if kind == "web" { "web" } else { "app" },
+    });
+
+    let url = format!("{}/market/submit-app", base.trim_end_matches('/'));
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .map_err(|e| format!("连接云端市场失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().unwrap_or_default();
+    if status.as_u16() == 404 {
+        app.market_status = "unavailable".into();
+        app.market_message =
+            "云端尚未实现 /market/submit-app，本地已保留待同步标记".into();
+        return Ok(app.market_message.clone());
+    }
+    if !status.is_success() {
+        return Err(format!("同步失败 HTTP {status}: {text}"));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({ "message": text }));
+    let remote_id = parsed
+        .get("submissionId")
+        .or_else(|| parsed.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let remote_status = parsed
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("queued");
+    app.market_remote_id = remote_id.clone();
+    app.market_status = if remote_status == "published" {
+        "published".into()
+    } else {
+        "queued".into()
+    };
+    app.market_message = parsed
+        .get("message")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| {
+            if remote_id.is_empty() {
+                format!("已提交云端（{remote_status}）")
+            } else {
+                format!("已提交云端（{remote_status}，单号 {remote_id}）")
+            }
+        });
+    Ok(app.market_message.clone())
 }
 
 /// 合并搜索结果：空查询裁剪应用数量，非空截断总数
@@ -510,7 +813,8 @@ fn run_command_line(command: &str, args: &[String]) -> Result<(), String> {
 
 #[tauri::command]
 pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window("main") {
+    // 用 webview 取窗口：主窗挂了内嵌网页后 get_webview_window 会返回 None
+    if let Some(win) = app.get_webview("main").map(|wv| wv.window()) {
         win.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -1038,6 +1342,34 @@ mod tests {
 
         let market = host_nav_items("市场");
         assert!(market.iter().any(|i| i.action == "open_market"));
+    }
+
+    #[test]
+    fn 网页地址规范化() {
+        assert_eq!(
+            normalize_web_url("https://linux.do/").unwrap(),
+            "https://linux.do/"
+        );
+        assert_eq!(
+            normalize_web_url("www.v2ex.com").unwrap(),
+            "https://www.v2ex.com"
+        );
+        assert!(normalize_web_url("").is_err());
+        assert!(normalize_web_url("not-a-url").is_err());
+    }
+
+    #[test]
+    fn 搜索内置网页入口() {
+        let linux = host_nav_items("linux");
+        assert!(
+            linux.iter().any(|i| i.payload == "https://linux.do/"),
+            "应能搜到 LINUX DO: {linux:?}"
+        );
+        let v2 = host_nav_items("v2ex");
+        assert!(
+            v2.iter().any(|i| i.payload == "https://www.v2ex.com/"),
+            "应能搜到 V2EX: {v2:?}"
+        );
     }
 
     #[test]

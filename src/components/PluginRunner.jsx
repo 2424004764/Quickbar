@@ -8,10 +8,12 @@ import { openDetachedPluginWindow } from "../utils/pluginWindow";
 import { handleWindowDragMouseDown } from "../utils/windowDrag";
 import { Base64Tool } from "./Base64Tool";
 import { ColorConvertTool } from "./ColorConvertTool";
+import { DiskUsageTool } from "./DiskUsageTool";
 import { HashTool } from "./HashTool";
 import { JsonFormatTool } from "./JsonFormatTool";
 import { JwtParseTool } from "./JwtParseTool";
 import { PasswordGenTool } from "./PasswordGenTool";
+import { PgMigrateTool } from "./PgMigrateTool";
 import { RegexLabTool } from "./RegexLabTool";
 import { TextDiffTool } from "./TextDiffTool";
 import { TimestampTool } from "./TimestampTool";
@@ -206,6 +208,10 @@ export function PluginRunner({
           <RegexLabTool />
         ) : pluginId === "color-convert" ? (
           <ColorConvertTool />
+        ) : pluginId === "pg-migrate" ? (
+          <PgMigrateTool />
+        ) : pluginId === "disk-usage" ? (
+          <DiskUsageTool />
         ) : pluginId === "apps" ? (
           <HintTool
             text="系统应用已接入全局搜索。返回后直接输入应用名即可打开。"

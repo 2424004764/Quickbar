@@ -174,6 +174,28 @@ pub fn host_market_icon_data_url() -> String {
     svg_data_url(SVG)
 }
 
+/// LINUX DO 社区
+pub fn host_linux_do_icon_data_url() -> String {
+    const SVG: &str = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">"##,
+        r##"<rect width="48" height="48" rx="12" fill="#FF6A00"/>"##,
+        r##"<text x="24" y="30" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="13" font-weight="700" fill="#fff">LDO</text>"##,
+        r##"</svg>"##,
+    );
+    svg_data_url(SVG)
+}
+
+/// V2EX
+pub fn host_v2ex_icon_data_url() -> String {
+    const SVG: &str = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">"##,
+        r##"<rect width="48" height="48" rx="12" fill="#1A1A1A"/>"##,
+        r##"<text x="24" y="30" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="700" fill="#fff">V2</text>"##,
+        r##"</svg>"##,
+    );
+    svg_data_url(SVG)
+}
+
 fn svg_data_url(svg: &str) -> String {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::STANDARD.encode(svg.as_bytes());

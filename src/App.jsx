@@ -10,13 +10,16 @@ import { MarketPanel } from "./components/MarketPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { LaunchHome } from "./components/LaunchHome";
 import { PluginRunner } from "./components/PluginRunner";
+import { WebBrowser } from "./components/WebBrowser";
 import { WindowDragBar } from "./components/WindowDragBar";
 import { useSearch } from "./hooks/useSearch";
 import { useTheme } from "./hooks/useTheme";
 import {
   addCustomApp,
+  browserClose,
   hideMainWindow,
   installMarketItem,
+  isWebUrl,
   openPath,
   readClipboardLaunchablePath,
   refreshAppIndex,
@@ -38,11 +41,21 @@ import "./styles/global.css";
 const boot = readBootParams();
 
 export default function App() {
-  const [view, setView] = useState(
-    boot.view === "plugin" && boot.pluginId ? "plugin" : "search",
-  );
+  const [view, setView] = useState(() => {
+    if (boot.detached && boot.view === "browser" && boot.browserUrl) {
+      return "browser";
+    }
+    if (boot.view === "plugin" && boot.pluginId) {
+      return "plugin";
+    }
+    return "search";
+  });
   const [pluginId, setPluginId] = useState(boot.pluginId || "");
   const [pluginTitle, setPluginTitle] = useState(boot.pluginTitle || "");
+  const [browserUrl, setBrowserUrl] = useState(boot.browserUrl || "");
+  const [browserTitle, setBrowserTitle] = useState(
+    boot.browserTitle || boot.browserUrl || "",
+  );
   const [homeKey, setHomeKey] = useState(0);
   /** 首页「最近打开」是否展开（影响主窗高度） */
   const [homeRecentExpanded, setHomeRecentExpanded] = useState(false);
@@ -106,6 +119,20 @@ export default function App() {
     [detached, homeRecentExpanded, homeRecentExpandRows],
   );
 
+  /** 网页与插件一致：先在主窗内打开，可再分离为独立窗 */
+  const openWebPage = useCallback(
+    (url, title) => {
+      const href = String(url || "").trim();
+      if (!isWebUrl(href)) {
+        return;
+      }
+      setBrowserUrl(href);
+      setBrowserTitle(String(title || href));
+      goToView("browser");
+    },
+    [goToView],
+  );
+
   // 仅在搜索页内：展开最近 / 有无查询 时调尺寸；跨页切换由 goToView 负责
   useEffect(() => {
     if (detached || viewRef.current !== "search") {
@@ -135,6 +162,14 @@ export default function App() {
       homeNavRef.current?.selectFirst?.();
     }
   }, [view, showHome, homeKey]);
+
+  // 宿主页面重载（HMR / 刷新）后 React 回到搜索页，但上一轮的子 WebView 还盖在上面
+  useEffect(() => {
+    if (viewRef.current === "browser") {
+      return;
+    }
+    void browserClose();
+  }, []);
 
   const focusSearch = useCallback((options) => {
     const selectAll = options?.select !== false;
@@ -283,12 +318,14 @@ export default function App() {
   }, [view, focusSearch, detached]);
 
   // Ctrl+D 分离；Esc：搜索有内容只清空；已空才隐藏（保留会话）
+  // 焦点在内嵌网页里时按键走 Rust 导航桥，见 WebBrowser
   useEffect(() => {
     function onKey(e) {
       if (detached) {
         return;
       }
-      if (view === "plugin" && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+      const isDetachKey = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d";
+      if ((view === "plugin" || view === "browser") && isDetachKey) {
         e.preventDefault();
         document.getElementById("qb-detach-btn")?.click();
         return;
@@ -297,6 +334,10 @@ export default function App() {
         return;
       }
       e.preventDefault();
+      if (view === "browser") {
+        backToSearch();
+        return;
+      }
       if (view === "search" && String(queryRef.current || "").trim()) {
         clearSearchQuery();
         return;
@@ -329,6 +370,10 @@ export default function App() {
       try {
         if (item.action === "open_path") {
           remember(item);
+          if (isWebUrl(item.payload)) {
+            openWebPage(item.payload, item.title);
+            return;
+          }
           await openPath(item.payload);
           await hideMainWindow();
           return;
@@ -418,7 +463,7 @@ export default function App() {
         console.error("activate failed", err);
       }
     },
-    [remember, openPlugin, goToView],
+    [remember, openPlugin, goToView, openWebPage, refresh],
   );
 
   function handleKeyNav(e) {
@@ -462,14 +507,34 @@ export default function App() {
   }
 
   function backToSearch() {
+    if (viewRef.current === "browser") {
+      void browserClose();
+      setBrowserUrl("");
+      setBrowserTitle("");
+    }
     goToView("search");
     setQuery("");
     setPluginId("");
     // 不 bump homeKey：首页保活，避免图标与列表整页重载闪一下
   }
 
-  // 独立插件窗：只渲染插件页
+  // 独立插件 / 网页窗：只渲染对应页
   if (detached) {
+    if (view === "browser" && browserUrl) {
+      return (
+        <div className="app-shell is-detached-app">
+          <div className="panel is-detached-panel">
+            <WindowDragBar />
+            <WebBrowser
+              url={browserUrl}
+              title={browserTitle}
+              detached
+              onBack={() => void getCurrentWindow().close()}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="app-shell is-detached-app">
         <div className="panel is-detached-panel">
@@ -489,6 +554,7 @@ export default function App() {
   const marketActive = view === "market";
   const settingsActive = view === "settings";
   const pluginActive = view === "plugin";
+  const browserActive = view === "browser";
 
   return (
     <div
@@ -603,7 +669,10 @@ export default function App() {
             aria-hidden={!marketActive}
             inert={!marketActive || undefined}
           >
-            <MarketPanel onBack={backToSearch} />
+            <MarketPanel
+              onBack={backToSearch}
+              onOpenWeb={(url, title) => openWebPage(url, title)}
+            />
           </div>
         ) : null}
 
@@ -626,6 +695,17 @@ export default function App() {
             <PluginRunner
               pluginId={pluginId}
               title={pluginTitle}
+              onBack={backToSearch}
+              onDetached={backToSearch}
+            />
+          </div>
+        ) : null}
+
+        {browserActive && browserUrl ? (
+          <div className="qb-view is-active">
+            <WebBrowser
+              url={browserUrl}
+              title={browserTitle}
               onBack={backToSearch}
               onDetached={backToSearch}
             />

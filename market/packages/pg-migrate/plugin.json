@@ -1,0 +1,14 @@
+{
+  "id": "pg-migrate",
+  "name": "PG 迁移",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "用 pg_dump/psql 迁移 schema 或数据；可保存连接并自动拉取 schema",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [
+    { "code": "pg", "label": "PG 迁移" },
+    { "code": "pgdump", "label": "PostgreSQL 迁移" }
+  ],
+  "market": { "category": "dev" }
+}

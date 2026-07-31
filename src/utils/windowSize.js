@@ -4,9 +4,9 @@
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 /** 首页（最近一行收起） */
-export const HOME_COMPACT_SIZE = { width: 720, height: 390 };
+export const HOME_COMPACT_SIZE = { width: 720, height: 430 };
 /** 与 `.lp-tile` 行高大致对齐，用于按行加高窗口 */
-export const HOME_RECENT_ROW_PX = 70;
+export const HOME_RECENT_ROW_PX = 83;
 /** 展开后「最近」最多露出行数，超出在面板内滚动 */
 export const HOME_RECENT_MAX_VISIBLE_ROWS = 4;
 
@@ -32,6 +32,8 @@ export const SEARCH_SIZE = { width: 720, height: 480 };
 export const PANEL_SIZE = { width: 720, height: 540 };
 /** 应用市场：列表项多，单独加高 */
 export const MARKET_SIZE = { width: 720, height: 640 };
+/** 内嵌网页 */
+export const BROWSER_SIZE = { width: 900, height: 640 };
 
 /** @type {string | null} */
 let lastAppliedKey = null;
@@ -59,12 +61,15 @@ function easeOutCubic(t) {
 
 /**
  * 按主界面视图解析目标尺寸（与 App 导航一致，供点击时抢先 setSize）
- * @param {"search"|"market"|"settings"|"plugin"} view
+ * @param {"search"|"market"|"settings"|"plugin"|"browser"} view
  * @param {{ showHome?: boolean, homeRecentExpanded?: boolean, homeRecentExpandRows?: number }} [opts]
  */
 export function resolveMainWindowSize(view, opts = {}) {
   if (view === "market") {
     return MARKET_SIZE;
+  }
+  if (view === "browser") {
+    return BROWSER_SIZE;
   }
   if (view === "settings" || view === "plugin") {
     return PANEL_SIZE;

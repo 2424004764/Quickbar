@@ -14,15 +14,48 @@ pub struct UserCommand {
     pub args: Vec<String>,
 }
 
-/// 用户加入的本地启动项（粘贴 exe/lnk）
+/// 用户加入的本地启动项（exe/lnk）或网页应用（https）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomApp {
     pub id: String,
     pub name: String,
+    /// 原生：exe/lnk 路径；网页：URL
     pub path: String,
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// native | web（缺省按 path 是否为 http(s) 推断）
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub description: String,
+    /// 用户希望同步到云端应用市场
+    #[serde(default)]
+    pub share_to_market: bool,
+    /// local | pending | queued | published | unavailable | error
+    #[serde(default)]
+    pub market_status: String,
+    /// 云端返回的投稿/条目 id（有则填）
+    #[serde(default)]
+    pub market_remote_id: String,
+    /// 最近一次同步说明（给 UI 看）
+    #[serde(default)]
+    pub market_message: String,
+}
+
+impl CustomApp {
+    pub fn resolved_kind(&self) -> &str {
+        let k = self.kind.trim();
+        if !k.is_empty() {
+            return k;
+        }
+        let p = self.path.trim();
+        if p.starts_with("http://") || p.starts_with("https://") {
+            "web"
+        } else {
+            "native"
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

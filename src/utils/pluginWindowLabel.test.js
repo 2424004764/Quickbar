@@ -3,7 +3,7 @@
  * 运行：cd C:\\dev\\quickbar && npm test -- src/utils/pluginWindowLabel.test.js
  */
 import { describe, expect, it } from "vitest";
-import { detachWindowOffset, makePluginWindowLabel } from "./pluginWindowLabel";
+import { detachWindowOffset, makePluginWindowLabel, makeWebWindowLabel } from "./pluginWindowLabel";
 
 describe("分离窗口 · 窗口标识", () => {
   it("同一插件多次分离应生成不同 label，且以 plugin- 开头", () => {
@@ -18,6 +18,12 @@ describe("分离窗口 · 窗口标识", () => {
 
   it("插件 id 中的非法字符应清洗为安全字符", () => {
     expect(makePluginWindowLabel("a/b c", 1, 1)).toBe("plugin-a-b-c-1-1");
+  });
+
+  it("网页分离 label 以 web- 开头且含主机名", () => {
+    expect(makeWebWindowLabel("https://www.v2ex.com/t/1", 3, 2000)).toBe(
+      "web-www-v2ex-com-2000-3",
+    );
   });
 });
 

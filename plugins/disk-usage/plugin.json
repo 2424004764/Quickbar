@@ -1,0 +1,15 @@
+{
+  "id": "disk-usage",
+  "name": "磁盘占用分析",
+  "version": "0.1.0",
+  "author": "quickbar",
+  "description": "分析某个盘或文件夹的磁盘占用，按子项大小排序并可逐级下钻",
+  "entrypoint": "index.js",
+  "features": ["search", "action"],
+  "commands": [
+    { "code": "du", "label": "磁盘占用" },
+    { "code": "disk", "label": "文件夹大小" },
+    { "code": "space", "label": "空间分析" }
+  ],
+  "market": { "category": "system" }
+}

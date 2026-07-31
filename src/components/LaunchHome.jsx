@@ -436,6 +436,22 @@ function LaunchHomeInner(
             action: "open_market",
             payload: "market",
           },
+          {
+            id: "pin:linux-do",
+            title: "LINUX DO",
+            subtitle: "https://linux.do/",
+            kind: "app",
+            action: "open_path",
+            payload: "https://linux.do/",
+          },
+          {
+            id: "pin:v2ex",
+            title: "V2EX",
+            subtitle: "https://www.v2ex.com/",
+            kind: "app",
+            action: "open_path",
+            payload: "https://www.v2ex.com/",
+          },
         ]);
 
         for (const p of plugins || []) {
