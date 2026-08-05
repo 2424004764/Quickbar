@@ -173,12 +173,23 @@ export default function App() {
 
   const focusSearch = useCallback((options) => {
     const selectAll = options?.select !== false;
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      if (selectAll) {
-        inputRef.current?.select?.();
+    const tryFocus = (attempt = 0) => {
+      const el = inputRef.current;
+      if (el) {
+        el.focus({ preventScroll: true });
+        if (selectAll) {
+          el.select?.();
+        }
+        if (document.activeElement === el) {
+          return;
+        }
       }
-    });
+      // WebView2 刚被系统抢焦时，第一次 focus 常会静默失败，短重试几次
+      if (attempt < 10) {
+        window.setTimeout(() => tryFocus(attempt + 1), 40);
+      }
+    };
+    requestAnimationFrame(() => tryFocus(0));
   }, []);
 
   /** Esc：有内容只清空，不隐藏 */
@@ -219,6 +230,8 @@ export default function App() {
           if (viewRef.current !== "search") {
             return;
           }
+          // 首页残留的子网页会抢走焦点，导致输入框 focus 无效
+          void browserClose();
           clearTimeout(focusTimer);
           focusTimer = setTimeout(() => {
             focusSearch();

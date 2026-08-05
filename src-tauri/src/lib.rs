@@ -84,19 +84,19 @@ pub fn show_launcher(app: &AppHandle) -> Result<(), String> {
         win.show().map_err(|e| e.to_string())?;
         // 显示后尺寸可能已稳定，再居中一次
         place_on_cursor_monitor(&win);
-        force_window_foreground(&win);
+        force_window_foreground(app, &win);
         // 后台重扫应用索引（刚装软件）；前端也会 await refresh_app_index
         std::thread::spawn(|| {
             let _ = apps::refresh_apps();
         });
-        // 仅通知窗口已显示，由前端决定是否重置页面（保留插件会话）
-        let _ = app.emit("quickbar://window-shown", ());
+        // 只通知主 UI WebView（避免子网页也收到）；由前端聚焦搜索框
+        let _ = app.emit_to("main", "quickbar://window-shown", ());
     }
     Ok(())
 }
 
 /// 尽量把窗口拉到前台（Windows 会限制跨进程抢焦点，需额外处理）
-fn force_window_foreground(win: &tauri::Window) {
+fn force_window_foreground(app: &AppHandle, win: &tauri::Window) {
     let _ = win.unminimize();
     let _ = win.show();
     let _ = win.set_focus();
@@ -106,6 +106,10 @@ fn force_window_foreground(win: &tauri::Window) {
         let _ = win.set_always_on_top(false);
         let _ = win.set_always_on_top(true);
         let _ = win.set_focus();
+    }
+    // 多 WebView 时窗口焦点常落在子页面上；强制拉回主 UI，否则输入框 focus 无效
+    if let Some(main) = app.get_webview("main") {
+        let _ = main.set_focus();
     }
 }
 
@@ -135,8 +139,8 @@ fn toggle_launcher(app: &AppHandle) {
                 // 已打开但鼠标在另一块屏：跟屏移动，而不是关闭
                 if cursor_on_other_monitor(&win) {
                     place_on_cursor_monitor(&win);
-                    let _ = win.set_focus();
-                    let _ = app.emit("quickbar://window-shown", ());
+                    force_window_foreground(app, &win);
+                    let _ = app.emit_to("main", "quickbar://window-shown", ());
                 } else {
                     hide_launcher(app);
                 }
