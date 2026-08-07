@@ -4,17 +4,116 @@
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tauri::{
     webview::WebviewBuilder, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Rect,
     Webview, WebviewUrl, Window,
 };
 
+/// 宿主窗口 -> 子 WebView label。建过就一直留着，只创建一次
 static HOST_TO_CHILD: Lazy<Mutex<HashMap<String, String>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-/// 串行化子 WebView 创建
-static CREATE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+/// 正在展示网页的宿主窗口。子 WebView 关闭后不销毁只停用，靠这个区分「有没有网页开着」
+static ACTIVE_HOSTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+/// 子 WebView 里当前装的网址。停用后页面还在，重开同一网址就只 show，避免再导航一次
+static HOST_URL: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// 全局串行化所有子 WebView 操作
+///
+/// `Window::add_child` 会在主线程上同步建 WebView2 控制器，创建期间 WebView2 自己跑嵌套消息泵，
+/// 会把队列里其他窗口的销毁消息一起处理掉 —— 一边建一边毁会把 UI 线程搅死（整个应用假死）。
+/// 所以创建/销毁/显隐都要抢同一把锁，且创建后留一段稳定期。
+static CHILD_OP_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// 新控制器创建后，WebView2 内部还会继续投递初始化消息，这段时间不要动其他子 WebView
+const CREATE_SETTLE_MS: u64 = 200;
+
+/// 等锁上限：真有操作卡住时后面的请求快速失败，而不是一起堆死
+const LOCK_WAIT_MS: u64 = 3000;
+
+/// 当前正在执行的子 WebView 操作，供看门狗定位卡点
+static CURRENT_OP: Lazy<Mutex<Option<(String, std::time::Instant)>>> = Lazy::new(|| Mutex::new(None));
+
+/// 刚结束的操作（入队≠执行完；看门狗报「进行中: 无」时看这个）
+static LAST_OP: Lazy<Mutex<Option<(String, u128)>>> = Lazy::new(|| Mutex::new(None));
+
+/// 主线程卡住时打印这个，能看出卡在哪一步
+pub fn current_op_desc() -> String {
+    match &*CURRENT_OP.lock() {
+        Some((name, since)) => format!("{name}（已 {}ms）", since.elapsed().as_millis()),
+        None => "无".into(),
+    }
+}
+
+pub fn last_op_desc() -> String {
+    match &*LAST_OP.lock() {
+        Some((name, ms)) => format!("{name}（耗时 {ms}ms）"),
+        None => "无".into(),
+    }
+}
+
+/// 记录进行中的操作，顺带把慢操作打出来
+struct OpGuard {
+    name: String,
+    started: std::time::Instant,
+}
+
+impl OpGuard {
+    fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        let started = std::time::Instant::now();
+        *CURRENT_OP.lock() = Some((name.clone(), started));
+        Self { name, started }
+    }
+}
+
+impl Drop for OpGuard {
+    fn drop(&mut self) {
+        *CURRENT_OP.lock() = None;
+        let ms = self.started.elapsed().as_millis();
+        *LAST_OP.lock() = Some((self.name.clone(), ms));
+        if ms > 1000 {
+            log_browser(format!("{} 耗时 {ms}ms（偏慢）", self.name));
+        }
+    }
+}
+
+/// 在主线程上同步执行 WebView 操作并等待完成（可带回结果）
+///
+/// 根因：Tauri 从非主线程调 `hide` / `navigate` / `set_bounds` 时，`send_user_message`
+/// 只是 `proxy.send_event` 入队就返回，**不等待主线程真正跑完**。
+/// 于是我们的锁/OpGuard 只罩住了「入队」，罩不住 WebView2 在 UI 线程上的实际工作；
+/// 前端立刻开始的窗口 `setSize` 动画会和这些消息在主线程上交错，WebView2 嵌套消息泵
+/// 一搅就卡死好几秒，看门狗却报「进行中的操作: 无」。
+///
+/// 把关键路径投到主线程并 `recv` 等回执后，命令返回才表示控制器侧已经做完。
+fn run_on_main_sync<T: Send + 'static>(
+    app: &AppHandle,
+    op: &str,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(f());
+    })
+    .map_err(|e| format!("{op}: 投递主线程失败: {e}"))?;
+    rx.recv_timeout(std::time::Duration::from_secs(8))
+        .map_err(|_| format!("{op}: 主线程执行超时"))
+}
+
+/// 抢子 WebView 操作锁；超时返回 None，调用方直接放弃本次操作
+fn lock_child_ops(op: &str) -> Option<parking_lot::MutexGuard<'static, ()>> {
+    let guard = CHILD_OP_LOCK.try_lock_for(std::time::Duration::from_millis(LOCK_WAIT_MS));
+    if guard.is_none() {
+        log_browser(format!(
+            "{op}: 等锁超时，跳过（进行中: {}）",
+            current_op_desc()
+        ));
+    }
+    guard
+}
 
 /// 前端传来的区域：CSS 像素，外加宿主 WebView 的视口尺寸
 ///
@@ -117,12 +216,19 @@ fn child_label_for_host(host_label: &str) -> String {
     format!("browser-{safe}")
 }
 
-/// 关掉宿主窗口下的内嵌网页
+/// 停用宿主窗口下的内嵌网页：只隐藏，不销毁、也不导航走
 ///
-/// 不只按记录的 label 关：把该窗口下所有 `browser-` 开头的子 WebView 一并扫掉，
-/// 避免任何一次记录失配就在启动器上留一块关不掉的网页。
-fn close_child_for_host(app: &AppHandle, host_label: &str) {
-    HOST_TO_CHILD.lock().remove(host_label);
+/// - 不 `close()`：销毁控制器会卡主线程
+/// - 不 `about:blank`：卸重页面同样卡主线程
+/// - 必须在主线程同步 hide 并等回执：见 [`run_on_main_sync`]
+///
+/// 真正销毁只在宿主窗口关闭时由 Tauri 做。
+fn park_child_for_host(app: &AppHandle, host_label: &str) {
+    // 已经停用过就别再 hide：返回首页时常被调两次（组件卸载 + App 显式关闭）
+    if !ACTIVE_HOSTS.lock().remove(host_label) {
+        log_browser(format!("park host={host_label}: already inactive, skip"));
+        return;
+    }
 
     let mut labels = vec![child_label_for_host(host_label)];
     if let Some(host) = app.get_webview(host_label) {
@@ -132,29 +238,24 @@ fn close_child_for_host(app: &AppHandle, host_label: &str) {
             }
         }
     }
-    log_browser(format!(
-        "close host={host_label} candidates={labels:?} known={:?}",
-        app.webviews().keys().collect::<Vec<_>>()
-    ));
+    log_browser(format!("park host={host_label} candidates={labels:?}"));
 
-    for label in labels {
-        let Some(wv) = app.get_webview(&label) else {
-            log_browser(format!("close: webview {label} not found in manager"));
-            continue;
-        };
-        // 先藏起来：close 走事件循环，隐藏能立刻让启动器不被盖住
-        let _ = wv.hide();
-        // 断开页面，停掉音视频与定时器，避免关闭前还在后台跑
-        if let Ok(blank) = url::Url::parse("about:blank") {
-            let _ = wv.navigate(blank);
+    let app_main = app.clone();
+    let labels_main = labels;
+    if let Err(err) = run_on_main_sync(app, "park", move || {
+        for label in labels_main {
+            let Some(wv) = app_main.get_webview(&label) else {
+                continue;
+            };
+            // 在主线程调用：send_user_message 走同步路径，真正执行完才返回
+            let _ = wv.hide();
+            let _ = wv.eval(
+                r#"try{document.querySelectorAll("video,audio").forEach(function(m){try{m.pause()}catch(e){}})}catch(e){}"#,
+            );
+            log_browser(format!("park {label}: ok"));
         }
-        match wv.close() {
-            Ok(()) => log_browser(format!(
-                "close {label}: ok, still-known={}",
-                app.get_webview(&label).is_some()
-            )),
-            Err(err) => log_browser(format!("close {label} failed: {err}")),
-        }
+    }) {
+        log_browser(format!("park host={host_label} failed: {err}"));
     }
 }
 
@@ -197,7 +298,10 @@ fn browser_open_blocking(
     }
 
     // 前端可能连发两次（StrictMode / 快速切换），串行化避免重复建同名 webview
-    let _creating = CREATE_LOCK.lock();
+    let Some(_creating) = lock_child_ops("open") else {
+        return Err("内嵌网页忙，请重试".into());
+    };
+    let _op = OpGuard::new("open");
 
     let host_label = webview.label().to_string();
     let child_label = child_label_for_host(&host_label);
@@ -217,12 +321,36 @@ fn browser_open_blocking(
         rect
     ));
 
-    // 已有则导航 + 调整位置
-    if let Some(wv) = app.get_webview(&child_label) {
-        wv.navigate(parsed).map_err(|e| e.to_string())?;
-        let _ = wv.set_bounds(rect);
-        let _ = wv.show();
-        HOST_TO_CHILD.lock().insert(host_label, child_label);
+    let url_str = parsed.as_str().to_string();
+    let same_url = HOST_URL
+        .lock()
+        .get(&host_label)
+        .is_some_and(|u| u == &url_str);
+
+    // 常态路径：子 WebView 建过就一直在。同一网址只是停用过 → 只 show，别再导航
+    if app.get_webview(&child_label).is_some() {
+        let app_main = app.clone();
+        let child = child_label.clone();
+        let host = host_label.clone();
+        let url_for_map = url_str.clone();
+        run_on_main_sync(&app, "open-reuse", move || -> Result<(), String> {
+            let Some(wv) = app_main.get_webview(&child) else {
+                return Err("内嵌网页丢失".into());
+            };
+            if same_url {
+                log_browser(format!("open {child}: show parked {url_for_map}"));
+            } else {
+                wv.navigate(parsed).map_err(|e| e.to_string())?;
+                HOST_URL.lock().insert(host, url_for_map);
+            }
+            wv.set_bounds(rect).map_err(|e| e.to_string())?;
+            wv.show().map_err(|e| e.to_string())?;
+            Ok(())
+        })??;
+        HOST_TO_CHILD
+            .lock()
+            .insert(host_label.clone(), child_label);
+        ACTIVE_HOSTS.lock().insert(host_label);
         return Ok(());
     }
 
@@ -241,12 +369,24 @@ fn browser_open_blocking(
             false
         });
 
-    let wv = window
+    let _wv = window
         .add_child(builder, rect.position, rect.size)
         .map_err(|e| format!("创建内嵌浏览器失败: {e}"))?;
 
-    let _ = wv.set_bounds(rect);
-    HOST_TO_CHILD.lock().insert(host_label, child_label);
+    let app_main = app.clone();
+    let child = child_label.clone();
+    run_on_main_sync(&app, "open-create", move || {
+        if let Some(wv) = app_main.get_webview(&child) {
+            let _ = wv.set_bounds(rect);
+        }
+    })?;
+    HOST_TO_CHILD
+        .lock()
+        .insert(host_label.clone(), child_label);
+    HOST_URL.lock().insert(host_label.clone(), url_str);
+    ACTIVE_HOSTS.lock().insert(host_label);
+    // 仍持有锁：让新控制器初始化完，别让别的窗口这时候动子 WebView
+    std::thread::sleep(std::time::Duration::from_millis(CREATE_SETTLE_MS));
     Ok(())
 }
 
@@ -258,31 +398,47 @@ pub async fn browser_set_bounds(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         // 与创建互斥：创建期间尺寸请求先等一等，避免打到还没建好的 webview
-        let _guard = CREATE_LOCK.lock();
+        let Some(_guard) = lock_child_ops("set_bounds") else {
+            return Ok(());
+        };
+        let _op = OpGuard::new("set_bounds");
         let host_label = webview.label().to_string();
+        // 已停用：窗口收缩动画期间 ResizeObserver 还会狂发 set_bounds，
+        // 打到隐藏的子 WebView 控制器上会和 hide 交错，正是卡死触发器之一
+        if !ACTIVE_HOSTS.lock().contains(&host_label) {
+            return Ok(());
+        }
         let child_label = HOST_TO_CHILD
             .lock()
             .get(&host_label)
             .cloned()
             .unwrap_or_else(|| child_label_for_host(&host_label));
-        let Some(wv) = app.get_webview(&child_label) else {
-            log_browser(format!("set_bounds: {child_label} not found"));
-            return Ok(());
-        };
         let rect = bounds.to_rect(&webview.window());
-        log_browser(format!("set_bounds {child_label} -> {rect:?}"));
-        wv.set_bounds(rect).map_err(|e| e.to_string())
+        let app_main = app.clone();
+        let child = child_label.clone();
+        run_on_main_sync(&app, "set_bounds", move || -> Result<(), String> {
+            let Some(wv) = app_main.get_webview(&child) else {
+                log_browser(format!("set_bounds: {child} not found"));
+                return Ok(());
+            };
+            log_browser(format!("set_bounds {child} -> {rect:?}"));
+            wv.set_bounds(rect).map_err(|e| e.to_string())
+        })?
     })
     .await
     .map_err(|e| format!("任务失败: {e}"))?
 }
 
+/// 「关闭」内嵌网页 —— 实际是停用，见 [`park_child_for_host`]
 #[tauri::command]
 pub async fn browser_close(app: AppHandle, webview: Webview) -> Result<(), String> {
     log_browser(format!("close requested by {}", webview.label()));
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = CREATE_LOCK.lock();
-        close_child_for_host(&app, webview.label());
+        let Some(_guard) = lock_child_ops("close") else {
+            return;
+        };
+        let _op = OpGuard::new("close");
+        park_child_for_host(&app, webview.label());
     })
     .await
     .map_err(|e| format!("任务失败: {e}"))
@@ -296,6 +452,10 @@ pub async fn browser_set_visible(
     visible: bool,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let Some(_guard) = lock_child_ops("set_visible") else {
+            return Ok(());
+        };
+        let _op = OpGuard::new("set_visible");
         let host_label = webview.label().to_string();
         let child_label = HOST_TO_CHILD
             .lock()
@@ -305,6 +465,7 @@ pub async fn browser_set_visible(
         let Some(wv) = app.get_webview(&child_label) else {
             return Ok(());
         };
+        log_browser(format!("set_visible {child_label} -> {visible}"));
         if visible { wv.show() } else { wv.hide() }.map_err(|e| e.to_string())
     })
     .await
@@ -319,6 +480,10 @@ pub async fn browser_nav(
     action: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let Some(_guard) = lock_child_ops("nav") else {
+            return Ok(());
+        };
+        let _op = OpGuard::new(format!("nav:{action}"));
         let host_label = webview.label().to_string();
         let child_label = HOST_TO_CHILD
             .lock()
@@ -328,14 +493,18 @@ pub async fn browser_nav(
         let Some(wv) = app.get_webview(&child_label) else {
             return Err("内嵌网页未打开".into());
         };
-        let script = match action.as_str() {
-            "back" => "try{history.back()}catch(e){}",
-            "forward" => "try{history.forward()}catch(e){}",
-            "reload" => "try{location.reload()}catch(e){}",
-            _ => return Err(format!("未知导航动作: {action}")),
-        };
         log_browser(format!("nav {child_label} action={action}"));
-        wv.eval(script).map_err(|e| e.to_string())
+        // 刷新走原生接口；前进/后退没有原生 API，只能注脚本
+        match action.as_str() {
+            "reload" => wv.reload().map_err(|e| e.to_string()),
+            "back" => wv
+                .eval("try{history.back()}catch(e){}")
+                .map_err(|e| e.to_string()),
+            "forward" => wv
+                .eval("try{history.forward()}catch(e){}")
+                .map_err(|e| e.to_string()),
+            _ => Err(format!("未知导航动作: {action}")),
+        }
     })
     .await
     .map_err(|e| format!("任务失败: {e}"))?
@@ -347,13 +516,26 @@ pub fn browser_log(message: String) {
     log_browser(format!("fe: {message}"));
 }
 
+/// 是否有网页正开着
+///
+/// 看的是「停用与否」而不是「子 WebView 在不在」：停用后控制器仍留着复用，
+/// 用存在性判断会让首页永远以为还有残留网页。
+///
+/// 不能写成同步命令：同步命令跑在主线程，而主线程可能正卡在 WebView2 创建里
 #[tauri::command]
-pub fn browser_is_open(app: AppHandle, webview: Webview) -> bool {
-    let host_label = webview.label().to_string();
-    let child_label = HOST_TO_CHILD
-        .lock()
-        .get(&host_label)
-        .cloned()
-        .unwrap_or_else(|| child_label_for_host(&host_label));
-    app.get_webview(&child_label).is_some()
+pub async fn browser_is_open(app: AppHandle, webview: Webview) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        let host_label = webview.label().to_string();
+        if !ACTIVE_HOSTS.lock().contains(&host_label) {
+            return false;
+        }
+        let child_label = HOST_TO_CHILD
+            .lock()
+            .get(&host_label)
+            .cloned()
+            .unwrap_or_else(|| child_label_for_host(&host_label));
+        app.get_webview(&child_label).is_some()
+    })
+    .await
+    .unwrap_or(false)
 }

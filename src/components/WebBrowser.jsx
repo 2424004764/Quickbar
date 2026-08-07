@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   browserClose,
+  browserCloseNow,
   browserIsOpen,
   browserNav,
   browserOpen,
@@ -199,6 +200,8 @@ export function WebBrowser({
   async function handleDetach() {
     toggleMenu(false);
     try {
+      // 先停用主窗的子页面：新窗口的 WebView 创建同样在主线程，两者重叠会卡死
+      await browserCloseNow();
       await openDetachedWebWindow(url, title || url);
       onDetached?.();
     } catch (err) {

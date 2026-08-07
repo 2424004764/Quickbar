@@ -113,6 +113,43 @@ fn force_window_foreground(app: &AppHandle, win: &tauri::Window) {
     }
 }
 
+/// 主线程看门狗：定期往主线程投一个空任务，回不来就说明 UI 线程卡住了
+///
+/// 内嵌网页反复出现整体假死，光看现象分不清是哪一步；卡住时把进行中的子 WebView 操作打出来。
+fn spawn_main_thread_watchdog(app: &AppHandle) {
+    if !(cfg!(debug_assertions) || std::env::var_os("QUICKBAR_BROWSER_DEBUG").is_some()) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut warned = false;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let (tx, rx) = std::sync::mpsc::channel();
+            if app.run_on_main_thread(move || {
+                let _ = tx.send(());
+            })
+            .is_err()
+            {
+                return;
+            }
+            match rx.recv_timeout(std::time::Duration::from_secs(3)) {
+                Ok(()) => warned = false,
+                Err(_) => {
+                    if !warned {
+                        warned = true;
+                        eprintln!(
+                            "[qb-watchdog] 主线程卡住 >3s，进行中: {}，刚结束: {}",
+                            in_app_browser::current_op_desc(),
+                            in_app_browser::last_op_desc()
+                        );
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// 重复启动时：在主线程把已有窗口拉到前台
 fn focus_existing_launcher(app: &AppHandle) {
     let app = app.clone();
@@ -236,6 +273,7 @@ pub fn run() {
         ])
         .setup(|app| {
             let _ = ensure_data_dirs();
+            spawn_main_thread_watchdog(app.handle());
 
             // 迁移危险热键
             let mut config = load_config();

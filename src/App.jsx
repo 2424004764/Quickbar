@@ -17,6 +17,7 @@ import { useTheme } from "./hooks/useTheme";
 import {
   addCustomApp,
   browserClose,
+  browserIsOpen,
   hideMainWindow,
   installMarketItem,
   isWebUrl,
@@ -168,7 +169,11 @@ export default function App() {
     if (viewRef.current === "browser") {
       return;
     }
-    void browserClose();
+    void (async () => {
+      if (await browserIsOpen().catch(() => false)) {
+        await browserClose();
+      }
+    })();
   }, []);
 
   const focusSearch = useCallback((options) => {
@@ -231,7 +236,11 @@ export default function App() {
             return;
           }
           // 首页残留的子网页会抢走焦点，导致输入框 focus 无效
-          void browserClose();
+          void (async () => {
+            if (await browserIsOpen().catch(() => false)) {
+              await browserClose();
+            }
+          })();
           clearTimeout(focusTimer);
           focusTimer = setTimeout(() => {
             focusSearch();
@@ -519,11 +528,26 @@ export default function App() {
     }
   }
 
-  function backToSearch() {
+  async function backToSearch() {
     if (viewRef.current === "browser") {
-      void browserClose();
+      // 根因：park(hide) 与窗口高度动画的连续 setSize 不能叠在主线程上。
+      // 必须等子 WebView 在主线程真正藏完，再瞬时改尺寸（不要 animate）。
+      await browserClose();
       setBrowserUrl("");
       setBrowserTitle("");
+      setView("search");
+      if (!detached) {
+        void applyMainWindowSize(
+          resolveMainWindowSize("search", {
+            showHome: true,
+            homeRecentExpanded,
+            homeRecentExpandRows,
+          }),
+        );
+      }
+      setQuery("");
+      setPluginId("");
+      return;
     }
     goToView("search");
     setQuery("");

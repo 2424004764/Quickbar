@@ -69,6 +69,43 @@ await runWithBlurHideSuspended(() => open({ directory: true, ... }));
 
 完成结果用事件广播（如 `quickbar://disk-usage-done`），不要只依赖发起窗的 Promise。
 
+### 6. 内嵌网页：主线程消息交错才是卡死根因
+
+看门狗报「主线程卡住 >3s，进行中的内嵌网页操作: 无」时，不要只猜 `close`——
+**真正的根因是调度模型**：
+
+Tauri / wry 从非主线程调 `hide` / `navigate` / `set_bounds` / `close` 时，
+`send_user_message` 只做 `proxy.send_event` **入队即返回**，不等待主线程执行完。
+旧代码的锁和 OpGuard 只罩住了「入队」。返回首页时前端立刻启动窗口高度动画
+（200ms 内连续 `setSize`），这些消息和尚未消化的 WebView2 控制器操作在 UI 线程上交错；
+WebView2 在 `SetIsVisible` / `SetBounds` / `Close` / `Navigate` 时会跑**嵌套消息泵**，
+把半截的 resize 也捞进来处理，于是主线程被搅死好几秒。
+
+加重因子（越重越容易卡）：
+
+- `Close()` 销毁控制器
+- `navigate(about:blank)` 卸掉重页面
+- 停用后仍响应 `set_bounds`（窗口收缩动画会狂打）
+
+正确策略：
+
+| 动作 | 实现 |
+|------|------|
+| 打开 / 关闭 / 改尺寸 | `run_on_main_sync`：投到主线程并 `recv` 等回执，命令返回才算做完 |
+| 打开（新网址） | `navigate` + `set_bounds` + `show` |
+| 打开（同一网址刚停用） | 只 `set_bounds` + `show` |
+| 关闭 | 只 `hide`（`park_child_for_host`），不 `close()`、不 `about:blank` |
+| 停用后 `set_bounds` | 直接 skip（`ACTIVE_HOSTS`） |
+| 返回首页 | **先 `await browserClose()`，再瞬时 `applyMainWindowSize`**，禁止与 park 重叠的高度动画 |
+| 真正销毁 | 只在宿主窗口关闭时由 Tauri 做 |
+
+推论：
+
+- 不要为了省内存加延时销毁 / 空闲销毁 / 关闭时 `about:blank`
+- `browser_is_open` 看 `ACTIVE_HOSTS`，不是子 WebView 是否存在
+- 前端 `browserClose()` 必须清掉 `lastOpen`
+- 已停用时重复 `park` 直接 skip
+
 ## 插件 / 系统工具
 
 完整工具需要：

@@ -94,12 +94,23 @@ function withTimeout(name, run) {
   });
 }
 
+/** StrictMode 双挂载会把同一次打开发两遍；短时间内的重复只调位置 */
+let lastOpen = { url: "", at: 0 };
+const OPEN_DEDUPE_MS = 1500;
+
 /**
  * 主窗内嵌打开网页
  * @param {string} url
  * @param {{ x: number, y: number, width: number, height: number }} bounds
  */
 export function browserOpen(url, bounds) {
+  const now = Date.now();
+  if (url === lastOpen.url && now - lastOpen.at < OPEN_DEDUPE_MS) {
+    void browserLog(`open deduped ${url}`);
+    lastOpen = { url, at: now };
+    return browserSetBounds(bounds);
+  }
+  lastOpen = { url, at: now };
   void browserLog(`open queued ${url}`);
   return queueBrowserOp("open", () => invoke("browser_open", { url, bounds }));
 }
@@ -114,10 +125,21 @@ export function browserSetBounds(bounds) {
   });
 }
 
+/**
+ * 关闭内嵌网页
+ *
+ * Rust 侧只 hide（不销毁、不 about:blank）：销毁控制器或卸掉重页面都会把主线程卡住好几秒。
+ */
 export function browserClose() {
   pendingBounds = null;
-  void browserLog("close queued");
+  // 关过之后同一网址要能立刻重开，不能被去重挡掉
+  lastOpen = { url: "", at: 0 };
   return queueBrowserOp("close", () => invoke("browser_close"));
+}
+
+/** 分离窗口前用：等主窗的网页确实停用了再开新窗，避免两个 WebView 操作重叠 */
+export function browserCloseNow() {
+  return browserClose();
 }
 
 /** @param {boolean} visible */
